@@ -2,7 +2,40 @@
 
 A local-first Windows 11 workbench for researching, designing, checking, and preparing original graphics for products sold through Etsy. Its low-resolution hive map shows actual jobs and events, not simulated activity.
 
-**Status:** project brief and market research. No agent runtime, Etsy connection, or live storefront is implemented yet.
+**Status:** first runnable local workbench. It tracks real jobs, artwork, costs, QA, and owner approval, with optional Ollama drafting. It has no Etsy connection, automatic artwork generation, or live storefront yet.
+
+## Run on Windows 11
+
+1. Install [Node.js 22 or later](https://nodejs.org/en/download) and [Git](https://git-scm.com/downloads/win) if they are not installed.
+2. Open PowerShell and run:
+
+   ```powershell
+   git clone https://github.com/Kenneth-Rakentine/Hive-Mint.git
+   cd Hive-Mint
+   npm start
+   ```
+
+3. Open **http://127.0.0.1:3741** in your browser. Leave the PowerShell window open while using the app; press Ctrl+C to stop it.
+
+No `npm install` or account is required for the first version. The server listens only on this PC. Job records and uploaded files are saved under `%APPDATA%\HiveMint` on Windows. Back up that folder if you want to preserve your work. Never commit it to GitHub.
+
+### Optional local drafting with Ollama
+
+Install [Ollama for Windows](https://ollama.com/download/windows), then in another PowerShell window run `ollama pull qwen3.5:4b`. When Ollama is running, Hive Mint shows the installed models and can draft research **hypotheses**, a design brief, or listing copy. The research worker has no live Etsy browsing, and the design worker writes a brief rather than an image. Every generated draft remains editable. Without Ollama, all fields work manually.
+
+To use a different data directory or Ollama endpoint, set `HIVE_MINT_DATA_DIR` or `OLLAMA_URL` before running. The default Ollama endpoint is `http://127.0.0.1:11434`. Do not point it at an untrusted remote host.
+
+Run `npm test` for the workflow and persistence check.
+
+### What this release does
+
+- Create jobs, attach PNG/JPG/WebP artwork, and move through research, design, QA, costing, and owner approval.
+- Show real stage counts on a low-resolution hive map. Bees appear only for real jobs in an active station.
+- Estimate amount left per order with editable fees and cost assumptions.
+- Keep a timestamped job activity record and local drafts of listings or customer replies.
+- Return a changed design to design/QA; replacing artwork resets QA and approval.
+
+It **does not** publish to Etsy, send messages, buy products, monitor sales, search the web, inspect artwork automatically, or generate finished image files. Publishing and customer sending will require separate explicit controls when integrations are built.
 
 ## First usable milestone
 
@@ -31,7 +64,7 @@ A job card links to its sources, files, timestamps, model/tool costs, QA finding
 
 ## Architecture direction
 
-A small local service owns a SQLite job/event database and stores artwork in an application data directory. Bounded workers are invoked at stage transitions; they do not continuously converse. Start with a local web UI; package it for Windows only after the real workflow and screen have been tested. An automation runner or model adapter can be selected when the interfaces and costs are clearer. Keep provider keys outside the repo and require explicit per-tool permissions.
+A small local Node service owns an atomic JSON job file and stores artwork in an application data directory. It invokes Ollama only when the owner clicks a drafting button. This simple single-user store is suitable for a first local prototype; migrate to SQLite when concurrent agents and external integrations require transactional updates. Package the app for Windows after the workflow and screen have been tested on the owner's PC. Keep provider keys outside the repo and require explicit per-tool permissions.
 
 **Core records:** ideas, jobs, candidate assets, research citations, QA findings, cost estimates, approvals, listing drafts, customer drafts, events. Every external action is traceable to a job and an approval.
 
