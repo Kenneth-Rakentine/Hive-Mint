@@ -94,3 +94,33 @@ def sample_product(session, settings):
                              product_type="spreadsheet")
     session.flush()
     return product
+
+
+# --------------------------------------------------------------------------- Ollama, always mocked
+
+def ollama_reply(content, *, prompt_tokens=120, completion_tokens=40, status=200):
+    """A canned /api/chat response. content may be a dict (sent as JSON text) or a string."""
+    import json
+
+    import httpx
+
+    text = content if isinstance(content, str) else json.dumps(content)
+    return httpx.Response(status, json={"model": "qwen3.5:4b", "message": {"role": "assistant", "content": text},
+                                        "done": True, "prompt_eval_count": prompt_tokens,
+                                        "eval_count": completion_tokens})
+
+
+def ollama_client(handler):
+    """An httpx client whose requests go to handler(request) instead of a real Ollama."""
+    import httpx
+
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url="http://ollama.test")
+
+
+def ollama_down():
+    import httpx
+
+    def refuse(request):
+        raise httpx.ConnectError("connection refused", request=request)
+
+    return ollama_client(refuse)
