@@ -21,3 +21,6 @@ archive/*
 
 # Legacy tooling
 node_modules/
+
+# Red Team review packets and verdicts (runtime output tied to local database ids)
+research/reviews/

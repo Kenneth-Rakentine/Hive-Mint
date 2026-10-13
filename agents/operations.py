@@ -2,7 +2,8 @@
 
 No LLM is involved. The manager reads the database, queues the next job for the
 department that owns the product's current gate, runs queued jobs with bounded retries,
-and records every step.
+and records every step. Jobs owned by an external handler (the Red Team, done in a
+human-triggered Claude Code session) stay queued until their result is imported.
 """
 
 from __future__ import annotations
@@ -13,9 +14,10 @@ import time
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from agents.departments import STUB_HANDLERS, Handler
+from agents.departments import STUB_HANDLERS, Handler, StageResult
 from agents.production import Production
 from agents.qa import QA
+from agents.red_team import RedTeam
 from agents.rework import active_brief, brief_payload
 from agents.testing import Testing
 from app.db import utcnow
@@ -70,8 +72,9 @@ ACTOR = "operations"
 
 
 def default_handlers(settings: Settings) -> dict[Department, Handler]:
-    """Real Production, Testing and QA; the remaining departments are still stubs."""
-    return {**STUB_HANDLERS, D.PRODUCTION: Production(settings), D.TESTING: Testing(settings), D.QA: QA(settings)}
+    """Real Production, Testing, QA and Red Team (external); the remaining departments are still stubs."""
+    return {**STUB_HANDLERS, D.PRODUCTION: Production(settings), D.TESTING: Testing(settings), D.QA: QA(settings),
+            D.RED_TEAM: RedTeam(settings)}
 
 
 class OperationsManager:
@@ -170,19 +173,49 @@ class OperationsManager:
             except Exception as error:  # a failed attempt is recorded, then retried or escalated
                 self._finish_run(run, clock, JobStatus.FAILED, error=f"{type(error).__name__}: {error}")
                 continue
-            self._finish_run(run, clock, JobStatus.SUCCEEDED, summary=result.summary)
-            job.status, job.finished_at = JobStatus.SUCCEEDED, utcnow()
-            job.output_json = json.dumps({"outcome": result.outcome.value, "next_status": result.next_status.value,
-                                          "summary": result.summary, **result.data}, default=str)
-            log_event(self.session, "job.finished", actor=ACTOR, job=job, message=result.summary,
-                      data={"outcome": result.outcome.value, "attempts": job.attempts})
-            return job
+            return self._succeed(job, run, clock, result)
 
         job.status, job.finished_at = JobStatus.FAILED, utcnow()
         job.error = f"Failed after {job.attempts} attempt(s); last error: {run.error}"
         log_event(self.session, "job.failed", actor=ACTOR, job=job, message=job.error)
         transition(self.session, self.settings, product, S.ERROR, actor=ACTOR, reason=job.error, job=job)
         return job
+
+    def complete_external_job(self, job: Job, result: StageResult, *, provider: str, model: str, tier: int) -> Job:
+        """Finish a job whose work happened outside tick(), e.g. a Claude Code Red Team session.
+
+        Records one AgentRun for that work and moves the product exactly as run_job would. Any
+        error propagates so the caller can roll back; nothing is retried automatically.
+        """
+        if job.status != JobStatus.QUEUED:
+            raise ValueError(f"Job {job.id} is {job.status}, not QUEUED")
+        if job.product.status != job.for_status:
+            raise ValueError(f"Job {job.id} is stale: product is {job.product.status}, job was for {job.for_status}")
+        job.status, job.started_at = JobStatus.RUNNING, utcnow()
+        job.attempts += 1
+        log_event(self.session, "job.started", actor=ACTOR, job=job,
+                  message=f"{job.department.value}: {job.job_type} (external: {provider})")
+        run = AgentRun(job_id=job.id, department=job.department, provider=provider, model=model, tier=tier,
+                       cost_usd_micros=0, status=JobStatus.RUNNING)
+        self.session.add(run)
+        self.session.flush()
+        clock = time.perf_counter()
+        transition(self.session, self.settings, job.product, result.next_status,
+                   actor=job.department.value.lower(), reason=result.summary, job=job, run=run)
+        return self._succeed(job, run, clock, result)
+
+    def _succeed(self, job: Job, run: AgentRun, clock: float, result: StageResult) -> Job:
+        self._finish_run(run, clock, JobStatus.SUCCEEDED, summary=result.summary)
+        job.status, job.finished_at = JobStatus.SUCCEEDED, utcnow()
+        job.output_json = json.dumps({"outcome": result.outcome.value, "next_status": result.next_status.value,
+                                      "summary": result.summary, **result.data}, default=str)
+        log_event(self.session, "job.finished", actor=ACTOR, job=job, message=result.summary,
+                  data={"outcome": result.outcome.value, "attempts": job.attempts})
+        return job
+
+    def is_external(self, job: Job) -> bool:
+        """Jobs done by a human-triggered session (Red Team via Claude Code) wait for an import."""
+        return getattr(self.handlers.get(job.department), "external", False)
 
     def _finish_run(self, run: AgentRun, clock: float, status: JobStatus, *, summary: str = "",
                     error: str | None = None) -> None:
@@ -215,6 +248,8 @@ class OperationsManager:
         self.session.commit()
         ran = 0
         for job in self.session.scalars(select(Job).where(Job.status == JobStatus.QUEUED).order_by(Job.id)).all():
+            if self.is_external(job):
+                continue  # waits for its session, e.g. python -m app.cli review-import
             self.run_job(job)
             self.session.commit()
             ran += job.status != JobStatus.PAUSED

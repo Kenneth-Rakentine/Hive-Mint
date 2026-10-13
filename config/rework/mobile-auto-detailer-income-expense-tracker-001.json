@@ -1,0 +1,34 @@
+{
+  "summary": "First rework of the detailer tracker: v1 shipped four separate workbooks that force double entry, with no dashboard or charts for preview images, and no view of profit after mileage or money to set aside for tax.",
+  "required_changes": [
+    {
+      "id": "merge_workbooks",
+      "change": "Merge the four workbooks into one workbook with tabs. Each job is entered once and feeds income and customer history; supply purchases count as costs without being re-entered as expenses.",
+      "reason": "Four separate files force double entry (jobs in both the Income sheet and the Customer Log; supplies in both the Supply Cost Tracker and Expenses), a top refund and review complaint.",
+      "acceptance": "One .xlsx in the download; Customers and Summary formulas read the Jobs and Supplies tabs directly."
+    },
+    {
+      "id": "dashboard_charts",
+      "change": "Add a Dashboard sheet with key figures and charts (income vs costs by month, profit after mileage by month, costs by category) using chart types that work in Excel and Google Sheets.",
+      "reason": "Listings need preview images, and buyers expect a visual summary; v1 had no dashboard or charts.",
+      "acceptance": "Dashboard tab with three charts whose series read the Summary tab; Testing checks the chart references."
+    },
+    {
+      "id": "profit_after_mileage",
+      "change": "Show profit after the IRS standard mileage deduction, monthly and for the year.",
+      "reason": "Mobile detailers drive all day; profit before mileage overstates what they earn.",
+      "acceptance": "Dashboard 'Profit After Mileage' = Net Profit - Mileage Deduction, tested by a scenario."
+    },
+    {
+      "id": "tax_set_aside",
+      "change": "Add a user-set Tax Set-Aside % on the Dashboard and the amount to put aside (zero on a loss), plus take-home after the set-aside.",
+      "reason": "Self-employed buyers want to know how much to save for taxes; a fixed rate would be wrong for many.",
+      "acceptance": "Editable % cell (default 25%); Tax Set-Aside = ROUND(MAX(0, Profit After Mileage) x %, 2), tested by scenarios."
+    }
+  ],
+  "findings": [
+    {"severity": "major", "category": "double_entry", "issue": "Four separate files force double entry."},
+    {"severity": "major", "category": "missing_feature", "issue": "No dashboard or charts for preview images."},
+    {"severity": "major", "category": "missing_feature", "issue": "No profit after mileage deduction or user-set tax set-aside %."}
+  ]
+}

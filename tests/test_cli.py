@@ -1,40 +1,89 @@
+import json
 import zipfile
 
+import pytest
 from sqlalchemy import select
 
 from agents.operations import OperationsManager, default_handlers
 from agents.qa import QA
 from app import cli
 from app.db import make_engine, make_session_factory
-from app.models import Build, Product, TestResult
+from app.lifecycle import create_product
+from app.models import Build, Product, Review, ReworkBrief, TestResult
 from app.states import Department, ProductStatus
-from tests.conftest import ollama_client, ollama_reply
+from tests.conftest import advance_to, ollama_client, ollama_reply
 
 CLEAR = {"clarity_score": 92, "findings": []}
 
 
-def _mock_ollama(monkeypatch):
-    client = ollama_client(lambda request: ollama_reply(CLEAR))
-    monkeypatch.setattr(cli, "OperationsManager", lambda session, settings: OperationsManager(
-        session, settings, handlers={**default_handlers(settings), Department.QA: QA(settings, client)}))
-
-
-def test_demo_reaches_human_review(settings, monkeypatch):
+@pytest.fixture
+def cli_env(settings, monkeypatch, tmp_path):
+    """The CLI wired to the test database, a temp reviews folder and a mocked Ollama."""
     engine = make_engine(settings.db_url)
+    client = ollama_client(lambda request: ollama_reply(CLEAR))
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     monkeypatch.setattr(cli, "get_engine", lambda: engine)
-    _mock_ollama(monkeypatch)
+    monkeypatch.setattr(cli, "red_team_dir", lambda: tmp_path / "reviews")
+    monkeypatch.setattr(cli, "OperationsManager", lambda session, s: OperationsManager(
+        session, s, handlers={**default_handlers(s), Department.QA: QA(s, client)}))
+    yield engine, tmp_path / "reviews"
+    engine.dispose()
 
+
+def _product(engine, slug=cli.DEMO["slug"]):
+    with make_session_factory(engine)() as session:
+        return session.scalar(select(Product).where(Product.slug == slug))
+
+
+def test_demo_stops_for_red_team_then_a_pass_verdict_reaches_human_review(cli_env, settings):
+    engine, reviews = cli_env
     assert cli.main(["demo"]) == 0
     assert cli.main(["demo"]) == 1  # refuses to duplicate the sample product
+    product = _product(engine)
+    assert product.status == ProductStatus.RED_TEAM
     with make_session_factory(engine)() as session:
-        product = session.scalar(select(Product).where(Product.slug == cli.DEMO["slug"]))
-        assert product.status == ProductStatus.HUMAN_REVIEW
-        assert product.name == "Mobile Auto Detailer Income & Expense Tracker"
         build = session.scalar(select(Build).where(Build.product_id == product.id))
         assert build.path == str(settings.products_dir / str(product.id) / "v1")
         assert zipfile.ZipFile(build.zip_path).testzip() is None
         results = session.scalars(select(TestResult).where(TestResult.build_id == build.id)).all()
         assert results and all(r.passed for r in results)
+        qa = session.scalar(select(Review).where(Review.department == Department.QA))
+        assert qa.decision == "PASS" and qa.reviewer == "qa+ollama"
+
+    assert cli.main(["review-export", str(product.id)]) == 0
+    packet = reviews / str(product.id) / "packet.md"
+    assert "## Product digest" in packet.read_text(encoding="utf-8")
+
+    verdict = reviews / str(product.id) / "verdict.json"
+    verdict.write_text(json.dumps({"product_id": product.id, "build_version": 2, "decision": "PASS",
+                                   "summary": "Holds up against free alternatives."}))
+    assert cli.main(["review-import", str(product.id), str(verdict)]) == 2  # stale build version
+    assert _product(engine).status == ProductStatus.RED_TEAM
+    verdict.write_text(json.dumps({"product_id": product.id, "build_version": 1, "decision": "PASS",
+                                   "summary": "Holds up against free alternatives."}))
+    assert cli.main(["review-import", str(product.id), str(verdict)]) == 0
+    assert _product(engine).status == ProductStatus.COMPLIANCE
+
+    assert cli.main(["run"]) == 0
+    assert _product(engine).status == ProductStatus.HUMAN_REVIEW
     assert cli.main(["status"]) == 0
-    engine.dispose()
+
+
+def test_rework_command_seeds_a_brief_and_resume_returns_a_held_product(cli_env, session, settings):
+    engine, _ = cli_env
+    product = create_product(session, settings, slug="tracker", name="Tracker", product_type="spreadsheet")
+    advance_to(session, settings, product, ProductStatus.HUMAN_REVIEW)
+    session.commit()
+
+    assert cli.main(["rework", str(product.id), str(cli.Path("does-not-exist.json"))]) == 2
+    seed = cli.Path(__file__).parent.parent / "config" / "rework" / \
+        "mobile-auto-detailer-income-expense-tracker-001.json"
+    assert cli.main(["rework", str(product.id), str(seed)]) == 0
+    with make_session_factory(engine)() as check:
+        reloaded = check.get(Product, product.id)
+        assert reloaded.status == ProductStatus.REWORK and reloaded.rework_count == 1
+        brief = check.scalar(select(ReworkBrief))
+        assert brief.source == "HUMAN" and brief.change_ids[0] == "merge_workbooks"
+
+    assert cli.main(["resume", str(product.id)]) == 2  # not held
+    assert cli.main(["resume", "999"]) == 2
