@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TIMEZONE = "America/New_York"
 DEFAULT_DB_URL = f"sqlite:///{(ROOT / 'data' / 'hivemint.db').as_posix()}"
 RECALC_ENGINES = ("auto", "libreoffice", "formulas")
+DEFAULT_OLLAMA_MODELS_DIR = Path.home() / ".ollama" / "models"
 
 
 def usd_to_micros(amount: str | Decimal) -> int:
@@ -24,6 +25,13 @@ def usd_to_micros(amount: str | Decimal) -> int:
 
 def _int(name: str, default: int) -> int:
     value = int(os.getenv(name, default))
+    if value < 0:
+        raise ValueError(f"{name} must not be negative")
+    return value
+
+
+def _float(name: str, default: float) -> float:
+    value = float(os.getenv(name, default))
     if value < 0:
         raise ValueError(f"{name} must not be negative")
     return value
@@ -47,6 +55,16 @@ class Settings:
     max_job_attempts: int = 3
     max_rework_cycles: int = 3
     ollama_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3.5:4b"
+    ollama_timeout_s: float = 120.0
+    ollama_models_dir: Path = DEFAULT_OLLAMA_MODELS_DIR
+    # QA: pass score, and the most a local model's findings may deduct (deterministic checks come first).
+    qa_pass_score: int = 70
+    qa_model_max_deduction: int = 20
+    # Disk guard: Production jobs pause (DISK_LIMIT) below this free space or above this folder size.
+    min_free_disk_gb: float = 50.0
+    max_hivemint_storage_gb: float = 20.0
+    storage_root: Path = ROOT
     # Daily and monthly limits reset at local midnight in this IANA timezone.
     timezone: str = DEFAULT_TIMEZONE
     # Where Production writes builds, and where stale build folders are moved aside.
@@ -74,6 +92,14 @@ class Settings:
             max_job_attempts=max(1, _int("MAX_JOB_ATTEMPTS", 3)),
             max_rework_cycles=_int("MAX_REWORK_CYCLES", 3),
             ollama_url=os.getenv("OLLAMA_URL", "http://127.0.0.1:11434"),
+            ollama_model=os.getenv("OLLAMA_MODEL", "qwen3.5:4b"),
+            ollama_timeout_s=_float("OLLAMA_TIMEOUT_S", 120.0),
+            ollama_models_dir=Path(os.getenv("OLLAMA_MODELS") or DEFAULT_OLLAMA_MODELS_DIR),
+            qa_pass_score=_int("QA_PASS_SCORE", 70),
+            qa_model_max_deduction=_int("QA_MODEL_MAX_DEDUCTION", 20),
+            min_free_disk_gb=_float("MIN_FREE_DISK_GB", 50.0),
+            max_hivemint_storage_gb=_float("MAX_HIVEMINT_STORAGE_GB", 20.0),
+            storage_root=Path(os.getenv("HIVEMINT_STORAGE_ROOT", ROOT)),
             timezone=os.getenv("HIVEMINT_TIMEZONE", DEFAULT_TIMEZONE),
             products_dir=Path(os.getenv("HIVEMINT_PRODUCTS_DIR", ROOT / "products")),
             archive_dir=Path(os.getenv("HIVEMINT_ARCHIVE_DIR", ROOT / "archive")),
@@ -91,6 +117,8 @@ class Settings:
             "max_publications_per_day": self.max_publications_per_day,
             "max_job_attempts": self.max_job_attempts,
             "max_rework_cycles": self.max_rework_cycles,
+            "min_free_disk_gb": self.min_free_disk_gb,
+            "max_hivemint_storage_gb": self.max_hivemint_storage_gb,
             "limits_reset": f"local midnight ({self.timezone})",
         }
 

@@ -22,6 +22,7 @@ from app.lifecycle import log_event, transition
 from app.models import AgentRun, Event, Job, Product
 from app.states import OPEN_JOB_STATUSES, Department, JobStatus, ProductStatus
 from config.settings import Settings
+from tools.disk import check_disk
 
 S = ProductStatus
 D = Department
@@ -133,6 +134,11 @@ class OperationsManager:
             log_event(self.session, "job.cancelled", actor=ACTOR, job=job, message=job.error)
             return job
 
+        if job.department == D.PRODUCTION and (limit := check_disk(self.settings)):
+            job.status, job.error = JobStatus.PAUSED, limit
+            log_event(self.session, "job.paused", actor=ACTOR, job=job, message=limit)
+            return job
+
         handler = self.handlers.get(job.department)
         job.status, job.started_at = JobStatus.RUNNING, utcnow()
         log_event(self.session, "job.started", actor=ACTOR, job=job, message=f"{job.department.value}: {job.job_type}")
@@ -178,8 +184,21 @@ class OperationsManager:
                         "cost_usd_micros": run.cost_usd_micros, "status": status.value,
                         "attempt": run.job.attempts, "max_attempts": run.job.max_attempts})
 
+    def resume_paused_jobs(self) -> None:
+        """Requeue jobs paused by the disk guard once it clears. Checked once per tick."""
+        paused = self.session.scalars(select(Job).where(Job.status == JobStatus.PAUSED)).all()
+        disk_paused = [j for j in paused if (j.error or "").startswith("DISK_LIMIT")]
+        if disk_paused and check_disk(self.settings) is None:
+            for job in disk_paused:
+                job.status, job.error = JobStatus.QUEUED, None
+                log_event(self.session, "job.resumed", actor=ACTOR, job=job, message="Disk limits clear; requeued")
+
     def tick(self) -> int:
-        """Queue the next job for every routable product, then run queued jobs. Returns jobs run."""
+        """Queue the next job for every routable product, then run queued jobs. Returns jobs run.
+
+        A job paused by a guard is not counted as run, so a tick loop stops while it waits.
+        """
+        self.resume_paused_jobs()
         routable = [status for status, dept in ROUTING.items() if dept is not None]
         for product in self.session.scalars(select(Product).where(Product.status.in_(routable)).order_by(Product.id)):
             self.next_job(product)
@@ -188,5 +207,5 @@ class OperationsManager:
         for job in self.session.scalars(select(Job).where(Job.status == JobStatus.QUEUED).order_by(Job.id)).all():
             self.run_job(job)
             self.session.commit()
-            ran += 1
+            ran += job.status != JobStatus.PAUSED
         return ran

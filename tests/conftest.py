@@ -11,7 +11,9 @@ from config.settings import Settings
 @pytest.fixture
 def settings(tmp_path):
     return Settings(db_url=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
-                    products_dir=tmp_path / "products", archive_dir=tmp_path / "archive")
+                    products_dir=tmp_path / "products", archive_dir=tmp_path / "archive",
+                    storage_root=tmp_path, ollama_models_dir=tmp_path / "ollama-models",
+                    min_free_disk_gb=0, max_hivemint_storage_gb=1000)
 
 
 @pytest.fixture

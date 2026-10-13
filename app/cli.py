@@ -110,6 +110,14 @@ def cmd_status(_args) -> int:
     console.print(f"Queued jobs: {len(data['queued_jobs'])}")
     for job in data["queued_jobs"]:
         console.print(escape(f"  #{job['id']} {job['department']} {job['job_type']} - {job['product']}"))
+    for job in data["paused_jobs"]:
+        console.print(escape(f"  paused #{job['id']} {job['department']} {job['job_type']} - {job['product']}: "
+                             f"{job['error']}"), style="yellow")
+    disk = data["disk"]
+    ollama = "not found" if disk["ollama_models_gb"] is None else f"{disk['ollama_models_gb']:.2f} GB"
+    console.print(f"Disk: {disk['free_gb']:.1f} GB free (min {disk['min_free_disk_gb']:g}); Hive-Mint folder "
+                  f"{disk['hivemint_folder_gb']:.2f} GB (max {disk['max_hivemint_storage_gb']:g}); "
+                  f"Ollama models {ollama}")
     console.print("Cloud spend (USD):", data["cloud_spend_usd"])
     console.print("Limits:", data["limits"])
     return 0

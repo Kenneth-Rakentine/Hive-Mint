@@ -37,9 +37,10 @@ class JobStatus(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+    PAUSED = "PAUSED"  # held by a guard (e.g. DISK_LIMIT); requeued when the guard clears
 
 
-OPEN_JOB_STATUSES = frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
+OPEN_JOB_STATUSES = frozenset({JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSED})
 
 
 class Department(StrEnum):
