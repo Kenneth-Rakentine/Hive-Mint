@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from agents.departments import STUB_HANDLERS, StageResult
-from agents.operations import ROUTING, OperationsManager
+from agents.operations import ROUTING, OperationsManager, default_handlers
 from app.lifecycle import transition
 from app.models import AgentRun, Event, Job
 from app.states import Department, JobStatus, Outcome, ProductStatus as S
@@ -38,8 +38,9 @@ def test_no_automated_owner_for_human_or_closed_states(status):
     assert ROUTING[status] is None
 
 
-def test_every_routed_department_has_a_handler():
+def test_every_routed_department_has_a_handler(settings):
     assert {d for d in ROUTING.values() if d} <= set(STUB_HANDLERS)
+    assert set(default_handlers(settings)) == set(STUB_HANDLERS)
 
 
 def test_testing_qa_and_red_team_are_separate_departments():

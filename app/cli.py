@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from agents.operations import OperationsManager
 from app.db import get_engine, init_db, make_session_factory
 from app.lifecycle import create_product
-from app.models import Event, Product
+from app.models import Build, Event, Product, TestResult
 from app.states import ProductStatus
 from app.status import snapshot
 from config.settings import get_settings
@@ -26,7 +27,7 @@ DEMO = {
     "product_type": "spreadsheet",
     "description": "Track jobs, income, supplies, mileage and expenses for a mobile auto detailing business.",
 }
-MAX_DEMO_TICKS = 50  # safety bound; the stub pipeline needs about 10
+MAX_DEMO_TICKS = 50  # safety bound; a clean run needs 10 ticks, each rework cycle adds a few
 
 
 def _session():
@@ -52,7 +53,8 @@ def cmd_demo(_args) -> int:
             return 1
         product = create_product(session, settings, actor="cli-demo", **DEMO)
         session.commit()
-        console.print(f"Created [bold]{product.name}[/bold] (id {product.id})")
+        console.print(f"Created [bold]{product.name}[/bold] (id {product.id}). Building and testing real files; "
+                      "this takes about a minute.")
 
         ops = OperationsManager(session, settings)
         for _ in range(MAX_DEMO_TICKS):
@@ -71,10 +73,28 @@ def cmd_demo(_args) -> int:
         console.print(table)
         console.print(f"{len(events)} audit events recorded for this product "
                       "(see the events, jobs and agent_runs tables).")
+        _print_build(session, product)
         style = "green" if product.status == ProductStatus.HUMAN_REVIEW else "red"
         console.print(f"Final status: [bold {style}]{product.status}[/bold {style}]. "
                       "Nothing is published without human approval.")
         return 0 if product.status == ProductStatus.HUMAN_REVIEW else 1
+
+
+def _print_build(session, product: Product) -> None:
+    build = session.scalar(select(Build).where(Build.product_id == product.id).order_by(Build.version.desc()).limit(1))
+    if build is None:
+        console.print("No build was recorded.")
+        return
+    console.print(f"Build v{build.version}: [bold]{escape(build.path)}[/bold]")
+    for entry in json.loads(build.manifest_json):
+        console.print(escape(f"  {entry['name']:<30} {entry['bytes']:>8,} bytes"))
+    console.print(escape(f"  ZIP: {build.zip_path}"))
+    counts = dict(session.execute(select(TestResult.passed, func.count()).where(TestResult.build_id == build.id)
+                                  .group_by(TestResult.passed)).all())
+    if counts:
+        style = "red" if counts.get(False) else "green"
+        console.print(f"Testing: [{style}]{counts.get(True, 0)} passed, {counts.get(False, 0)} failed[/{style}] "
+                      "(see the test_results table).")
 
 
 def cmd_status(_args) -> int:
@@ -99,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="Hive-Mint command line")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init-db", help="create the SQLite database").set_defaults(func=cmd_init_db)
-    commands.add_parser("demo", help="run the sample product through stub departments to HUMAN_REVIEW") \
+    commands.add_parser("demo", help="build and test the sample product, then run it to HUMAN_REVIEW") \
         .set_defaults(func=cmd_demo)
     commands.add_parser("status", help="show product and job counts").set_defaults(func=cmd_status)
     args = parser.parse_args(argv)

@@ -14,6 +14,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from agents.departments import STUB_HANDLERS, Handler
+from agents.production import Production
+from agents.testing import Testing
 from app.db import utcnow
 from app.clock import day_start
 from app.lifecycle import log_event, transition
@@ -64,11 +66,16 @@ JOB_TYPES: dict[ProductStatus, str] = {
 ACTOR = "operations"
 
 
+def default_handlers(settings: Settings) -> dict[Department, Handler]:
+    """Real Production and Testing; the remaining departments are still stubs."""
+    return {**STUB_HANDLERS, D.PRODUCTION: Production(settings), D.TESTING: Testing(settings)}
+
+
 class OperationsManager:
     def __init__(self, session: Session, settings: Settings, handlers: dict[Department, Handler] | None = None):
         self.session = session
         self.settings = settings
-        self.handlers = STUB_HANDLERS if handlers is None else handlers
+        self.handlers = default_handlers(settings) if handlers is None else handlers
 
     @staticmethod
     def route(product: Product) -> Department | None:
