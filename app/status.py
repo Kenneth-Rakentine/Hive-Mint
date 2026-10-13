@@ -29,7 +29,7 @@ def snapshot(session: Session, settings: Settings) -> dict:
              "created_at": job.created_at.isoformat()}
             for job, name in queued
         ],
-        "cloud_spend_usd": {"today": f"{spend_today(session) / 1_000_000:.2f}",
-                            "month": f"{spend_month(session) / 1_000_000:.2f}"},
+        "cloud_spend_usd": {"today": f"{spend_today(session, settings) / 1_000_000:.2f}",
+                            "month": f"{spend_month(session, settings) / 1_000_000:.2f}"},
         "limits": settings.limits(),
     }

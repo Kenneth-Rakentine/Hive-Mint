@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from agents.departments import HANDLERS, Handler
 from app.db import utcnow
-from app.lifecycle import log_event, start_of_today, transition
+from app.clock import day_start
+from app.lifecycle import log_event, transition
 from app.models import AgentRun, Event, Job, Product
 from app.states import OPEN_JOB_STATUSES, Department, JobStatus, ProductStatus
 from config.settings import Settings
@@ -80,7 +81,7 @@ class OperationsManager:
 
     def builds_today(self) -> int:
         return self.session.scalar(
-            select(func.count(Job.id)).where(Job.department == D.PRODUCTION, Job.created_at >= start_of_today())
+            select(func.count(Job.id)).where(Job.department == D.PRODUCTION, Job.created_at >= day_start(self.settings.timezone))
         )
 
     def next_job(self, product: Product) -> Job | None:
@@ -109,7 +110,7 @@ class OperationsManager:
         # Log a deferral once per product per day, not on every tick.
         already = self.session.scalar(
             select(func.count(Event.id)).where(Event.product_id == product.id, Event.event_type == "job.deferred",
-                                               Event.created_at >= start_of_today())
+                                               Event.created_at >= day_start(self.settings.timezone))
         )
         if not already:
             log_event(self.session, "job.deferred", actor=ACTOR, product=product, message=reason)

@@ -46,6 +46,7 @@ The database lives at `data\hivemint.db` and is never committed. Delete it to st
   - 20 ideas/day
   - 3 builds/day
   - 0 publications/day
+  - all limits reset at local midnight, America/New_York (`HIVEMINT_TIMEZONE`)
 - A read-only API (`/health`, `/status`) and a CLI.
 
 ## What it does not do yet

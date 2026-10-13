@@ -54,6 +54,7 @@ Side states: `REWORK`, `REJECTED`, `PAUSED`, `RETIRED`, `ERROR`.
 - **20** ideas/day
 - **3** builds/day
 - **0** publications/day
+- Daily and monthly limits reset at local midnight, America/New_York (`HIVEMINT_TIMEZONE`). Timestamps are stored in UTC.
 
 ## Safety
 

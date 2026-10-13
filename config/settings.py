@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_TIMEZONE = "America/New_York"
 DEFAULT_DB_URL = f"sqlite:///{(ROOT / 'data' / 'hivemint.db').as_posix()}"
 
 
@@ -44,6 +46,11 @@ class Settings:
     max_job_attempts: int = 3
     max_rework_cycles: int = 3
     ollama_url: str = "http://127.0.0.1:11434"
+    # Daily and monthly limits reset at local midnight in this IANA timezone.
+    timezone: str = DEFAULT_TIMEZONE
+
+    def __post_init__(self) -> None:
+        ZoneInfo(self.timezone)  # fail fast on an unknown timezone
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -58,6 +65,7 @@ class Settings:
             max_job_attempts=max(1, _int("MAX_JOB_ATTEMPTS", 3)),
             max_rework_cycles=_int("MAX_REWORK_CYCLES", 3),
             ollama_url=os.getenv("OLLAMA_URL", "http://127.0.0.1:11434"),
+            timezone=os.getenv("HIVEMINT_TIMEZONE", DEFAULT_TIMEZONE),
         )
 
     def limits(self) -> dict[str, object]:
@@ -70,6 +78,7 @@ class Settings:
             "max_publications_per_day": self.max_publications_per_day,
             "max_job_attempts": self.max_job_attempts,
             "max_rework_cycles": self.max_rework_cycles,
+            "limits_reset": f"local midnight ({self.timezone})",
         }
 
 

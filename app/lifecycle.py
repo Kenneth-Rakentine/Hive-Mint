@@ -7,11 +7,11 @@ to the append-only Event log.
 from __future__ import annotations
 
 import json
-from datetime import datetime, time
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.clock import day_start
 from app.db import utcnow
 from app.models import AgentRun, Event, Job, Product
 from app.states import ACTIVE, HOLD, IllegalTransition, ProductStatus, can_transition
@@ -26,12 +26,6 @@ class TransitionBlocked(IllegalTransition):
 
 class LimitReached(RuntimeError):
     """A configured daily limit would be exceeded."""
-
-
-def start_of_today() -> datetime:
-    """Daily limits reset at midnight UTC."""
-    now = utcnow()
-    return datetime.combine(now.date(), time.min, tzinfo=now.tzinfo)
 
 
 def log_event(
@@ -73,7 +67,7 @@ def create_product(
     description: str = "",
     actor: str = "operations",
 ) -> Product:
-    created_today = session.scalar(select(func.count(Product.id)).where(Product.created_at >= start_of_today()))
+    created_today = session.scalar(select(func.count(Product.id)).where(Product.created_at >= day_start(settings.timezone)))
     if created_today >= settings.max_ideas_per_day:
         raise LimitReached(f"Daily idea limit reached ({settings.max_ideas_per_day})")
     product = Product(slug=slug, name=name, product_type=product_type, description=description,
@@ -84,12 +78,12 @@ def create_product(
     return product
 
 
-def publications_today(session: Session) -> int:
+def publications_today(session: Session, settings: Settings) -> int:
     return session.scalar(
         select(func.count(Event.id)).where(
             Event.event_type == "product.transition",
             Event.to_status == S.PUBLISHED.value,
-            Event.created_at >= start_of_today(),
+            Event.created_at >= day_start(settings.timezone),
         )
     )
 
@@ -105,7 +99,7 @@ def _check_guards(session: Session, settings: Settings, product: Product, target
             raise TransitionBlocked("Release requires a recorded human approval")
     if current == S.HUMAN_REVIEW and target == S.COMPLIANCE and product.previous_status != S.COMPLIANCE:
         raise TransitionBlocked("Only a compliance referral can be returned to COMPLIANCE")
-    if target == S.PUBLISHED and publications_today(session) >= settings.max_publications_per_day:
+    if target == S.PUBLISHED and publications_today(session, settings) >= settings.max_publications_per_day:
         raise LimitReached(f"Daily publication limit reached ({settings.max_publications_per_day})")
 
 
