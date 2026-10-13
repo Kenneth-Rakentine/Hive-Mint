@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base, UTCDateTime, utcnow
@@ -111,3 +111,41 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
 
     product: Mapped[Product | None] = relationship(back_populates="events")
+
+
+class Build(Base):
+    """One Production output: a versioned folder of deliverables plus the ZIP a buyer downloads."""
+
+    __tablename__ = "builds"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    spec_slug: Mapped[str] = mapped_column(String(120))
+    path: Mapped[str] = mapped_column(Text)
+    zip_path: Mapped[str] = mapped_column(Text)
+    zip_sha256: Mapped[str] = mapped_column(String(64))
+    manifest_json: Mapped[str] = mapped_column(Text, default="[]")  # [{name, bytes, sha256}]
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+
+    def __repr__(self) -> str:
+        return f"<Build {self.id} product={self.product_id} v{self.version}>"
+
+
+class TestResult(Base):
+    """One deterministic Testing check against one build. Never updated; a re-test adds rows."""
+
+    __test__ = False  # not a pytest test class
+    __tablename__ = "test_results"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    agent_run_id: Mapped[int | None] = mapped_column(ForeignKey("agent_runs.id"))
+    build_id: Mapped[int | None] = mapped_column(ForeignKey("builds.id"), index=True)
+    check: Mapped[str] = mapped_column(String(80))
+    target: Mapped[str] = mapped_column(String(200), default="")
+    passed: Mapped[bool] = mapped_column(Boolean)
+    detail: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)

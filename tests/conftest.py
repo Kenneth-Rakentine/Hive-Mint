@@ -8,7 +8,8 @@ from config.settings import Settings
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(db_url=f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
+    return Settings(db_url=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
+                    products_dir=tmp_path / "products", archive_dir=tmp_path / "archive")
 
 
 @pytest.fixture

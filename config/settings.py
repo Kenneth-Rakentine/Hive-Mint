@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TIMEZONE = "America/New_York"
 DEFAULT_DB_URL = f"sqlite:///{(ROOT / 'data' / 'hivemint.db').as_posix()}"
+RECALC_ENGINES = ("auto", "libreoffice", "formulas")
 
 
 def usd_to_micros(amount: str | Decimal) -> int:
@@ -48,9 +49,17 @@ class Settings:
     ollama_url: str = "http://127.0.0.1:11434"
     # Daily and monthly limits reset at local midnight in this IANA timezone.
     timezone: str = DEFAULT_TIMEZONE
+    # Where Production writes builds, and where stale build folders are moved aside.
+    products_dir: Path = ROOT / "products"
+    archive_dir: Path = ROOT / "archive"
+    # Testing recalculates workbooks with LibreOffice if found ("auto"), else the formulas package.
+    recalc_engine: str = "auto"
+    soffice_path: str | None = None
 
     def __post_init__(self) -> None:
         ZoneInfo(self.timezone)  # fail fast on an unknown timezone
+        if self.recalc_engine not in RECALC_ENGINES:
+            raise ValueError(f"HIVEMINT_RECALC_ENGINE must be one of {', '.join(RECALC_ENGINES)}")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -66,6 +75,10 @@ class Settings:
             max_rework_cycles=_int("MAX_REWORK_CYCLES", 3),
             ollama_url=os.getenv("OLLAMA_URL", "http://127.0.0.1:11434"),
             timezone=os.getenv("HIVEMINT_TIMEZONE", DEFAULT_TIMEZONE),
+            products_dir=Path(os.getenv("HIVEMINT_PRODUCTS_DIR", ROOT / "products")),
+            archive_dir=Path(os.getenv("HIVEMINT_ARCHIVE_DIR", ROOT / "archive")),
+            recalc_engine=os.getenv("HIVEMINT_RECALC_ENGINE", "auto"),
+            soffice_path=os.getenv("HIVEMINT_SOFFICE") or None,
         )
 
     def limits(self) -> dict[str, object]:
