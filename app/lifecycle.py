@@ -117,6 +117,8 @@ def transition(
     *,
     actor: str,
     reason: str,
+    job: Job | None = None,
+    run: AgentRun | None = None,
 ) -> Product:
     """Move a product to `target`, enforcing the table, guards and limits, and log it."""
     target = ProductStatus(target)
@@ -143,7 +145,7 @@ def transition(
     product.status = target
     product.status_reason = reason
     product.updated_at = utcnow()
-    log_event(session, "product.transition", actor=actor, product=product, from_status=current,
+    log_event(session, "product.transition", actor=actor, product=product, job=job, run=run, from_status=current,
               to_status=target, message=reason,
               data={"requested": requested} if requested != target else None)
     return product
