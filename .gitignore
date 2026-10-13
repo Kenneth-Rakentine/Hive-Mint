@@ -1,4 +1,23 @@
-node_modules/
-data/
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Secrets
 .env
-*.log
+
+# Runtime data (the database is local state, never committed)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+logs/*
+!logs/.gitkeep
+products/*
+!products/.gitkeep
+archive/*
+!archive/.gitkeep
+
+# Legacy tooling
+node_modules/
