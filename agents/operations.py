@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from agents.departments import STUB_HANDLERS, Handler
 from agents.production import Production
+from agents.rework import active_brief, brief_payload
 from agents.testing import Testing
 from app.db import utcnow
 from app.clock import day_start
@@ -100,18 +101,26 @@ class OperationsManager:
         if department == D.PRODUCTION and self.builds_today() >= self.settings.max_builds_per_day:
             self._defer(product, f"Daily build limit reached ({self.settings.max_builds_per_day})")
             return None
+        job_input = {"product_id": product.id, "status": product.status.value}
+        brief = active_brief(self.session, product) if department == D.PRODUCTION else None
+        if brief is not None:
+            job_input["rework_brief"] = brief_payload(brief)
         job = Job(
             product_id=product.id,
             department=department,
-            job_type=JOB_TYPES[product.status],
+            job_type=JOB_TYPES[product.status] if brief is None else "rework_build",
             for_status=product.status,
             max_attempts=self.settings.max_job_attempts,
-            input_json=json.dumps({"product_id": product.id, "status": product.status.value}),
+            input_json=json.dumps(job_input),
         )
         self.session.add(job)
         log_event(self.session, "job.created", actor=ACTOR, product=product, job=job,
-                  message=f"Queued {job.job_type} for {department.value}",
-                  data={"department": department.value, "job_type": job.job_type})
+                  message=f"Queued {job.job_type} for {department.value}"
+                          + (f" with rework brief #{brief.id}" if brief else ""),
+                  data={"department": department.value, "job_type": job.job_type,
+                        "rework_brief_id": brief.id if brief else None})
+        if brief is not None:
+            brief.status, brief.production_job_id = brief.IN_PRODUCTION, job.id
         return job
 
     def _defer(self, product: Product, reason: str) -> None:

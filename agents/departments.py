@@ -3,8 +3,10 @@
 Each handler receives a product and its job and returns a StageResult naming the next
 product status. The handlers here are STUBS: they apply trivial deterministic checks and
 pass the product forward so the pipeline can be exercised end to end. Production
-(agents/production.py) and Testing (agents/testing.py) are real; see
-agents.operations.default_handlers. Keep Testing deterministic.
+(agents/production.py), Testing (agents/testing.py), QA (agents/qa.py) and Red Team
+(agents/red_team.py, via a Claude Code session) are real; see
+agents.operations.default_handlers. Product Design's rework routing is real and
+deterministic. Keep Testing deterministic.
 """
 
 from __future__ import annotations
@@ -12,8 +14,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from sqlalchemy.orm import object_session
+
+from agents.rework import active_brief, uncovered
 from app.models import Job, Product
 from app.states import PIPELINE, Department, Outcome, ProductStatus
+from tools.spec import load_spec
 
 S = ProductStatus
 
@@ -55,6 +61,19 @@ _REBUILD_FROM = frozenset({S.PRODUCTION, S.TESTING, S.QA, S.SEO})
 
 def product_design(product: Product, job: Job) -> StageResult:
     if product.status == S.REWORK:
+        brief = active_brief(object_session(product), product)
+        if brief is not None:
+            spec = load_spec(product.slug)
+            missing = uncovered(brief, spec) if spec is not None else []
+            if missing:
+                return StageResult(
+                    Outcome.FAIL, S.PAUSED,
+                    f"Rework brief #{brief.id} needs spec/builder changes before a rebuild: {', '.join(missing)}. "
+                    f"Implement them, list them under 'resolves' in config/specs/{product.slug}.json, then run "
+                    f"python -m app.cli resume {product.id}", {"brief_id": brief.id, "uncovered": missing})
+            return StageResult(Outcome.PASS, S.PRODUCTION,
+                               f"Rework brief #{brief.id} ({len(brief.change_ids)} changes) routed to Production",
+                               {"brief_id": brief.id})
         target = S.PRODUCTION if product.previous_status in _REBUILD_FROM else S.SPECIFICATION
         return StageResult(Outcome.PASS, target, f"[stub] rework routed to {target.value}")
     return stub_pass(Department.PRODUCT_DESIGN)(product, job)

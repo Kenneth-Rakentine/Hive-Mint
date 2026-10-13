@@ -122,7 +122,7 @@ def transition(
     _check_guards(session, settings, product, target)
 
     requested = target
-    if target == S.REWORK:
+    if target == S.REWORK and current not in HOLD:  # resuming a held rework is not a new cycle
         product.rework_count += 1
         product.approved_by = product.approved_at = None
         if product.rework_count > settings.max_rework_cycles:

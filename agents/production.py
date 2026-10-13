@@ -17,8 +17,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import object_session
 
 from agents.departments import StageResult
+from agents.rework import uncovered
+from app.db import utcnow
 from app.lifecycle import log_event
-from app.models import Build, Job, Product
+from app.models import Build, Job, Product, ReworkBrief
 from app.states import Outcome, ProductStatus
 from config.settings import Settings
 from tools.builders import BUILDERS
@@ -43,6 +45,11 @@ class Production:
         builder = BUILDERS.get(spec["builder"])
         if builder is None:
             raise LookupError(f"Spec names unknown builder '{spec['builder']}'")
+        brief = self._brief(session, job)
+        if brief is not None and (missing := uncovered(brief, spec)):
+            return StageResult(Outcome.FAIL, S.REWORK,
+                               f"Production: spec v{spec.get('spec_version', 1)} does not implement rework brief "
+                               f"#{brief.id} changes: {', '.join(missing)}")
 
         version = 1 + session.scalar(select(func.count(Build.id)).where(Build.product_id == product.id))
         target = self.settings.products_dir / str(product.id) / f"v{version}"
@@ -72,12 +79,26 @@ class Production:
                       path=str(target), zip_path=str(zip_path), zip_sha256=sha256(zip_path),
                       manifest_json=json.dumps(manifest(files)))
         session.add(build)
+        session.flush()
+        data = {"build_id": build.id, "version": version, "path": str(target), "zip_path": str(zip_path),
+                "spec_version": spec.get("spec_version", 1)}
+        summary = f"Built v{version}: {len(files)} files + {spec['zip_name']}"
+        if brief is not None:
+            brief.status, brief.addressed_build_id, brief.addressed_at = brief.ADDRESSED, build.id, utcnow()
+            data |= {"rework_brief_id": brief.id, "resolved": brief.change_ids}
+            summary += f", addressing rework brief #{brief.id} ({', '.join(brief.change_ids)})"
         log_event(session, "build.created", actor="production", product=product, job=job,
                   message=f"Built v{version} at {target}",
-                  data={"version": version, "files": file_names(spec), "zip": spec["zip_name"]})
-        return StageResult(Outcome.PASS, S.TESTING,
-                           f"Built v{version}: {len(files)} files + {spec['zip_name']}",
-                           {"build_id": build.id, "version": version, "path": str(target), "zip_path": str(zip_path)})
+                  data={"version": version, "files": file_names(spec), "zip": spec["zip_name"],
+                        "rework_brief_id": brief.id if brief else None})
+        return StageResult(Outcome.PASS, S.TESTING, summary, data)
+
+    @staticmethod
+    def _brief(session, job: Job | None) -> ReworkBrief | None:
+        if job is None:
+            return None
+        attached = json.loads(job.input_json or "{}").get("rework_brief")
+        return session.get(ReworkBrief, attached["id"]) if attached else None
 
     def _archive_stale(self, folder: Path, product: Product) -> Path:
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

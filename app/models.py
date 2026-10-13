@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text
@@ -149,3 +150,55 @@ class TestResult(Base):
     passed: Mapped[bool] = mapped_column(Boolean)
     detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class Review(Base):
+    """A QA report or Red Team verdict on one build. Never updated; a re-review adds a row."""
+
+    __tablename__ = "reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), index=True)
+    build_id: Mapped[int | None] = mapped_column(ForeignKey("builds.id"), index=True)
+    department: Mapped[Department] = mapped_column(_enum(Department))
+    reviewer: Mapped[str] = mapped_column(String(100))  # provider or person, e.g. "qa+ollama", "claude-code"
+    model: Mapped[str] = mapped_column(String(100), default="")
+    decision: Mapped[str] = mapped_column(String(16))  # PASS, REWORK or REJECT
+    score: Mapped[int | None] = mapped_column(Integer)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    findings_json: Mapped[str] = mapped_column(Text, default="[]")
+    report_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+
+
+class ReworkBrief(Base):
+    """Structured changes a product needs before it can pass the gate that sent it back.
+
+    Each required change has a stable id. A spec lists the ids its builder implements under
+    "resolves"; Product Design only routes a product to Production once every id is covered.
+    """
+
+    __tablename__ = "rework_briefs"
+
+    OPEN, IN_PRODUCTION, ADDRESSED = "OPEN", "IN_PRODUCTION", "ADDRESSED"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    source: Mapped[str] = mapped_column(String(32))  # QA, RED_TEAM or HUMAN
+    actor: Mapped[str] = mapped_column(String(100))
+    review_id: Mapped[int | None] = mapped_column(ForeignKey("reviews.id"))
+    source_job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"))
+    build_id: Mapped[int | None] = mapped_column(ForeignKey("builds.id"))  # the build that was reviewed
+    summary: Mapped[str] = mapped_column(Text, default="")
+    required_changes_json: Mapped[str] = mapped_column(Text, default="[]")  # [{id, change, reason, acceptance}]
+    findings_json: Mapped[str] = mapped_column(Text, default="[]")
+    status: Mapped[str] = mapped_column(String(16), default="OPEN", index=True)
+    production_job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"))
+    addressed_build_id: Mapped[int | None] = mapped_column(ForeignKey("builds.id"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    addressed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    @property
+    def change_ids(self) -> list[str]:
+        return [c["id"] for c in json.loads(self.required_changes_json)]
