@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 from sqlalchemy import select
 
@@ -59,13 +60,17 @@ def cmd_demo(_args) -> int:
                 break
         session.refresh(product)
 
-        table = Table(title=f"Event log: {product.name}")
-        for column in ("time (UTC)", "event", "actor", "from", "to", "message"):
-            table.add_column(column)
-        for event in session.scalars(select(Event).where(Event.product_id == product.id).order_by(Event.id)):
-            table.add_row(event.created_at.strftime("%H:%M:%S"), event.event_type, event.actor,
-                          event.from_status or "", event.to_status or "", event.message)
+        events = session.scalars(select(Event).where(Event.product_id == product.id).order_by(Event.id)).all()
+        table = Table(title=f"Gate transitions: {product.name}")
+        for column in ("time (UTC)", "actor", "from", "to", "reason"):
+            table.add_column(column, overflow="fold")
+        for event in events:
+            if event.event_type == "product.transition":
+                table.add_row(event.created_at.strftime("%H:%M:%S"), event.actor, event.from_status or "",
+                              event.to_status or "", escape(event.message))
         console.print(table)
+        console.print(f"{len(events)} audit events recorded for this product "
+                      "(see the events, jobs and agent_runs tables).")
         style = "green" if product.status == ProductStatus.HUMAN_REVIEW else "red"
         console.print(f"Final status: [bold {style}]{product.status}[/bold {style}]. "
                       "Nothing is published without human approval.")
@@ -84,7 +89,7 @@ def cmd_status(_args) -> int:
     console.print("Jobs:", data["jobs_by_status"])
     console.print(f"Queued jobs: {len(data['queued_jobs'])}")
     for job in data["queued_jobs"]:
-        console.print(f"  #{job['id']} {job['department']} {job['job_type']} - {job['product']}")
+        console.print(escape(f"  #{job['id']} {job['department']} {job['job_type']} - {job['product']}"))
     console.print("Cloud spend (USD):", data["cloud_spend_usd"])
     console.print("Limits:", data["limits"])
     return 0
