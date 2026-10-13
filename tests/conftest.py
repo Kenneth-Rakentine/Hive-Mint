@@ -13,7 +13,8 @@ def settings(tmp_path):
     return Settings(db_url=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
                     products_dir=tmp_path / "products", archive_dir=tmp_path / "archive",
                     storage_root=tmp_path, ollama_models_dir=tmp_path / "ollama-models",
-                    min_free_disk_gb=0, max_hivemint_storage_gb=1000)
+                    min_free_disk_gb=0, max_hivemint_storage_gb=1000,
+                    ollama_url="http://127.0.0.1:9")  # nothing listens here: tests never reach a real Ollama
 
 
 @pytest.fixture
@@ -97,6 +98,24 @@ def sample_product(session, settings):
 
 
 # --------------------------------------------------------------------------- Ollama, always mocked
+
+def record_build(session, product, build_dir, spec, version=1):
+    """Record an existing build folder as the product's build, as Production would."""
+    from app.models import Build, Job
+    from app.states import Department, JobStatus
+    from tools.packaging import sha256
+
+    job = Job(product_id=product.id, department=Department.PRODUCTION, job_type="build_product",
+              for_status=ProductStatus.PRODUCTION, status=JobStatus.SUCCEEDED)
+    session.add(job)
+    session.flush()
+    build = Build(product_id=product.id, job_id=job.id, version=version, spec_slug=product.slug,
+                  path=str(build_dir), zip_path=str(build_dir / spec["zip_name"]),
+                  zip_sha256=sha256(build_dir / spec["zip_name"]))
+    session.add(build)
+    session.flush()
+    return build
+
 
 def ollama_reply(content, *, prompt_tokens=120, completion_tokens=40, status=200):
     """A canned /api/chat response. content may be a dict (sent as JSON text) or a string."""

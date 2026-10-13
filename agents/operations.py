@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from agents.departments import STUB_HANDLERS, Handler
 from agents.production import Production
+from agents.qa import QA
 from agents.rework import active_brief, brief_payload
 from agents.testing import Testing
 from app.db import utcnow
@@ -69,8 +70,8 @@ ACTOR = "operations"
 
 
 def default_handlers(settings: Settings) -> dict[Department, Handler]:
-    """Real Production and Testing; the remaining departments are still stubs."""
-    return {**STUB_HANDLERS, D.PRODUCTION: Production(settings), D.TESTING: Testing(settings)}
+    """Real Production, Testing and QA; the remaining departments are still stubs."""
+    return {**STUB_HANDLERS, D.PRODUCTION: Production(settings), D.TESTING: Testing(settings), D.QA: QA(settings)}
 
 
 class OperationsManager:

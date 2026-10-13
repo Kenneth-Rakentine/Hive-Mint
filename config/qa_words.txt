@@ -1,0 +1,12 @@
+# Domain words the QA spelling check accepts (one per line, case-insensitive).
+# Add genuine trade, brand and product words here; fix real misspellings in the product instead.
+app
+detailer
+detailers
+detailing
+dropdown
+dropdowns
+onedrive
+paypal
+venmo
+zelle

@@ -401,7 +401,7 @@ def instructions_pdf(params: dict, path: Path) -> None:
                    "IRS Rates and Lists tabs"],
         ["Instructions.pdf", "This guide"],
         ["README.txt", "A short quick-start note"],
-    ], (2.6, 4.1))
+    ], (3.2, 3.5))
     para("The workbook's tabs:")
     table([
         ["Tab", "What you do there"],

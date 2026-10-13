@@ -145,6 +145,14 @@ def transition(
     return product
 
 
+def resume(session: Session, settings: Settings, product: Product, *, actor: str, reason: str = "") -> Product:
+    """Return a PAUSED or ERROR product to the gate it was held at."""
+    if product.status not in HOLD or product.paused_from is None:
+        raise TransitionBlocked(f"Only a PAUSED or ERROR product can be resumed (status is {product.status})")
+    return transition(session, settings, product, product.paused_from, actor=actor,
+                      reason=reason or f"Resumed from {product.status} by {actor}")
+
+
 def record_approval(session: Session, product: Product, *, approver: str, note: str = "") -> Product:
     """A human approves the exact artifact that passed every gate. Required before release."""
     if product.status != S.HUMAN_REVIEW or product.previous_status != S.SEO:

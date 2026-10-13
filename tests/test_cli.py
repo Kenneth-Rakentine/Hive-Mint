@@ -2,16 +2,28 @@ import zipfile
 
 from sqlalchemy import select
 
+from agents.operations import OperationsManager, default_handlers
+from agents.qa import QA
 from app import cli
 from app.db import make_engine, make_session_factory
 from app.models import Build, Product, TestResult
-from app.states import ProductStatus
+from app.states import Department, ProductStatus
+from tests.conftest import ollama_client, ollama_reply
+
+CLEAR = {"clarity_score": 92, "findings": []}
+
+
+def _mock_ollama(monkeypatch):
+    client = ollama_client(lambda request: ollama_reply(CLEAR))
+    monkeypatch.setattr(cli, "OperationsManager", lambda session, settings: OperationsManager(
+        session, settings, handlers={**default_handlers(settings), Department.QA: QA(settings, client)}))
 
 
 def test_demo_reaches_human_review(settings, monkeypatch):
     engine = make_engine(settings.db_url)
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     monkeypatch.setattr(cli, "get_engine", lambda: engine)
+    _mock_ollama(monkeypatch)
 
     assert cli.main(["demo"]) == 0
     assert cli.main(["demo"]) == 1  # refuses to duplicate the sample product
