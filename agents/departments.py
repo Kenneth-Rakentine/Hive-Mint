@@ -1,9 +1,10 @@
 """Department handlers.
 
 Each handler receives a product and its job and returns a StageResult naming the next
-product status. v0.1 handlers are STUBS: they apply trivial deterministic checks and pass
-the product forward so the pipeline can be exercised end to end. Replace each one with a
-real implementation in later milestones; keep Testing deterministic.
+product status. The handlers here are STUBS: they apply trivial deterministic checks and
+pass the product forward so the pipeline can be exercised end to end. Production
+(agents/production.py) and Testing (agents/testing.py) are real; see
+agents.operations.default_handlers. Keep Testing deterministic.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ def product_design(product: Product, job: Job) -> StageResult:
     return stub_pass(Department.PRODUCT_DESIGN)(product, job)
 
 
-HANDLERS: dict[Department, Handler] = {
+STUB_HANDLERS: dict[Department, Handler] = {
     Department.OPERATIONS: operations_intake,
     Department.RESEARCH: stub_pass(Department.RESEARCH),
     Department.FINANCE: stub_pass(Department.FINANCE),

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from app.db import init_db, make_engine, make_session_factory
@@ -44,4 +46,49 @@ def advance_to(session, settings, product, target: ProductStatus):
     while product.status != target:
         nxt = PIPELINE[PIPELINE.index(product.status) + 1]
         transition(session, settings, product, nxt, actor="test", reason=f"test pass {product.status}")
+    return product
+
+
+SAMPLE_SLUG = "mobile-auto-detailer-income-expense-tracker"
+
+
+@pytest.fixture(scope="session")
+def sample_spec():
+    from tools.spec import load_spec
+
+    return load_spec(SAMPLE_SLUG)
+
+
+@pytest.fixture(scope="session")
+def good_build(tmp_path_factory, sample_spec):
+    """One clean build of the sample product (files + ZIP), shared read-only by the session."""
+    from tools.builders import BUILDERS
+    from tools.packaging import make_zip
+
+    out = tmp_path_factory.mktemp("good") / "v1"
+    make_zip(out / sample_spec["zip_name"], BUILDERS[sample_spec["builder"]](sample_spec, out))
+    return out
+
+
+@pytest.fixture(scope="session")
+def good_checks(sample_spec, good_build):
+    """Every Testing check run once against the clean build (recalculation is slow)."""
+    from agents.testing import run_checks
+
+    return run_checks(sample_spec, good_build)
+
+
+@pytest.fixture
+def build_copy(tmp_path, good_build):
+    """A private, writable copy of the clean build for tests that break something."""
+    import shutil
+
+    return Path(shutil.copytree(good_build, tmp_path / "copy" / "v1"))
+
+
+@pytest.fixture
+def sample_product(session, settings):
+    product = create_product(session, settings, slug=SAMPLE_SLUG, name="Mobile Auto Detailer Income & Expense Tracker",
+                             product_type="spreadsheet")
+    session.flush()
     return product

@@ -13,7 +13,7 @@ import time
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from agents.departments import HANDLERS, Handler
+from agents.departments import STUB_HANDLERS, Handler
 from app.db import utcnow
 from app.clock import day_start
 from app.lifecycle import log_event, transition
@@ -68,7 +68,7 @@ class OperationsManager:
     def __init__(self, session: Session, settings: Settings, handlers: dict[Department, Handler] | None = None):
         self.session = session
         self.settings = settings
-        self.handlers = HANDLERS if handlers is None else handlers
+        self.handlers = STUB_HANDLERS if handlers is None else handlers
 
     @staticmethod
     def route(product: Product) -> Department | None:
@@ -132,7 +132,8 @@ class OperationsManager:
 
         while job.attempts < job.max_attempts:
             job.attempts += 1
-            run = AgentRun(job_id=job.id, department=job.department, provider="stub", model="none", tier=0,
+            run = AgentRun(job_id=job.id, department=job.department, provider=getattr(handler, "provider", "stub"),
+                           model="none", tier=0,
                            cost_usd_micros=0, status=JobStatus.RUNNING)
             self.session.add(run)
             self.session.flush()

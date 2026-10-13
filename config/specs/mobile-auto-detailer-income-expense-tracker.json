@@ -1,0 +1,230 @@
+{
+  "slug": "mobile-auto-detailer-income-expense-tracker",
+  "name": "Mobile Auto Detailer Income & Expense Tracker",
+  "spec_version": 1,
+  "builder": "mobile_detailer_tracker",
+  "zip_name": "Mobile_Detailer_Business_Tracker.zip",
+  "parameters": {
+    "data_rows": 500,
+    "tax_year": 2026,
+    "irs_mileage_rates": [
+      {"effective_from": "2025-01-01", "rate": 0.70, "source": "IRS Notice 2025-5"},
+      {"effective_from": "2026-01-01", "rate": 0.725, "source": "IRS Notice 2026-10"},
+      {"effective_from": "2026-07-01", "rate": 0.76, "source": "IRS Announcement 2026-11"}
+    ],
+    "expense_categories": [
+      "Detailing Chemicals & Supplies", "Equipment & Tools", "Fuel", "Vehicle Repairs & Maintenance",
+      "Insurance", "Marketing & Advertising", "Phone & Software", "Water & Utilities", "Licenses & Fees",
+      "Training", "Other"
+    ],
+    "supply_categories": [
+      "Chemicals", "Towels & Microfiber", "Pads & Brushes", "Equipment", "Water & Power", "Safety & PPE",
+      "Other"
+    ],
+    "services": [
+      "Exterior Wash", "Interior Detail", "Full Detail", "Wax & Sealant", "Paint Correction", "Ceramic Coating",
+      "Headlight Restoration", "Engine Bay", "Odor Removal", "Fleet Wash", "Other"
+    ],
+    "payment_methods": ["Cash", "Card", "Venmo", "Zelle", "Cash App", "PayPal", "Check", "Other"]
+  },
+  "spreadsheet_rules": {
+    "comment": "Functions available in both Excel (2010+) and Google Sheets. Anything else fails Testing.",
+    "allowed_functions": ["AND", "COUNT", "COUNTIF", "COUNTIFS", "DATE", "IF", "ISNUMBER", "MAX", "MIN", "ROUND",
+                          "SUM", "SUMIF", "SUMIFS", "SUMPRODUCT", "VLOOKUP"],
+    "forbidden_values": ["#REF!", "#DIV/0!", "#NAME?", "#VALUE!", "#N/A", "#NUM!", "#NULL!"]
+  },
+  "files": [
+    {
+      "name": "Income_Expense_Tracker.xlsx",
+      "kind": "xlsx",
+      "sheets": [
+        {"name": "How to use"},
+        {"name": "Income", "header_row": 1, "freeze_header": true,
+         "columns": ["Date", "Customer", "Vehicle", "Service", "Payment Method", "Service Amount", "Tip", "Total",
+                     "Notes"],
+         "validated_columns": ["Date", "Service", "Payment Method", "Service Amount", "Tip"]},
+        {"name": "Expenses", "header_row": 1, "freeze_header": true,
+         "columns": ["Date", "Vendor", "Category", "Description", "Payment Method", "Amount", "Notes"],
+         "validated_columns": ["Date", "Category", "Payment Method", "Amount"]},
+        {"name": "Summary"},
+        {"name": "Lists"}
+      ],
+      "scenarios": [
+        {"name": "empty template shows zero totals",
+         "inputs": [],
+         "expect": [
+           {"sheet": "Summary", "label": "Total Income", "value": 0},
+           {"sheet": "Summary", "label": "Net Profit", "value": 0},
+           {"sheet": "Summary", "label": "Profit Margin", "value": 0}
+         ]},
+        {"name": "revenue $1,000 and expenses $250 give profit $750; other years are excluded",
+         "inputs": [
+           {"sheet": "Summary", "label": "Tax Year", "value": 2026},
+           {"sheet": "Income", "row": 1, "column": "Date", "value": "2026-03-05"},
+           {"sheet": "Income", "row": 1, "column": "Service Amount", "value": 900},
+           {"sheet": "Income", "row": 1, "column": "Tip", "value": 100},
+           {"sheet": "Income", "row": 2, "column": "Date", "value": "2025-12-31"},
+           {"sheet": "Income", "row": 2, "column": "Service Amount", "value": 300},
+           {"sheet": "Income", "row": 3, "column": "Date", "value": "2027-01-01"},
+           {"sheet": "Income", "row": 3, "column": "Service Amount", "value": 500},
+           {"sheet": "Expenses", "row": 1, "column": "Date", "value": "2026-03-09"},
+           {"sheet": "Expenses", "row": 1, "column": "Category", "value": "Detailing Chemicals & Supplies"},
+           {"sheet": "Expenses", "row": 1, "column": "Amount", "value": 250}
+         ],
+         "expect": [
+           {"sheet": "Income", "row": 1, "column": "Total", "value": 1000},
+           {"sheet": "Summary", "label": "Total Income", "value": 1000},
+           {"sheet": "Summary", "label": "Total Expenses", "value": 250},
+           {"sheet": "Summary", "label": "Net Profit", "value": 750},
+           {"sheet": "Summary", "label": "Profit Margin", "value": 0.75},
+           {"sheet": "Summary", "label": "March", "offset": 3, "value": 750},
+           {"sheet": "Summary", "label": "December", "offset": 1, "value": 0},
+           {"sheet": "Summary", "label": "Expenses by Category", "row_offset": 1, "offset": 1, "value": 250}
+         ]}
+      ]
+    },
+    {
+      "name": "Mileage_Log.xlsx",
+      "kind": "xlsx",
+      "sheets": [
+        {"name": "How to use"},
+        {"name": "Mileage Log", "header_row": 1, "freeze_header": true,
+         "columns": ["Date", "Business Purpose", "Customer / Job", "From", "To", "Business Miles", "IRS Rate",
+                     "Deduction", "Notes"],
+         "validated_columns": ["Date", "Business Miles"]},
+        {"name": "Summary"},
+        {"name": "IRS Rates", "header_row": 1, "freeze_header": true,
+         "columns": ["Effective From", "Rate per Mile", "Source"],
+         "validated_columns": ["Effective From", "Rate per Mile"]}
+      ],
+      "rate_table": {"sheet": "IRS Rates", "date_column": "Effective From", "rate_column": "Rate per Mile",
+                     "parameter": "irs_mileage_rates"},
+      "scenarios": [
+        {"name": "empty template shows zero miles and deduction",
+         "inputs": [],
+         "expect": [
+           {"sheet": "Summary", "label": "Business Miles", "value": 0},
+           {"sheet": "Summary", "label": "Mileage Deduction", "value": 0}
+         ]},
+        {"name": "100 miles at each 2026 IRS rate; a 2025 trip is excluded from the 2026 total",
+         "inputs": [
+           {"sheet": "Summary", "label": "Tax Year", "value": 2026},
+           {"sheet": "Summary", "label": "Odometer on January 1", "value": 10000},
+           {"sheet": "Summary", "label": "Odometer on December 31", "value": 30000},
+           {"sheet": "Mileage Log", "row": 1, "column": "Date", "value": "2026-03-10"},
+           {"sheet": "Mileage Log", "row": 1, "column": "Business Miles", "value": 100},
+           {"sheet": "Mileage Log", "row": 2, "column": "Date", "value": "2026-08-10"},
+           {"sheet": "Mileage Log", "row": 2, "column": "Business Miles", "value": 100},
+           {"sheet": "Mileage Log", "row": 3, "column": "Date", "value": "2025-06-01"},
+           {"sheet": "Mileage Log", "row": 3, "column": "Business Miles", "value": 10}
+         ],
+         "expect": [
+           {"sheet": "Mileage Log", "row": 1, "column": "IRS Rate", "value": 0.725},
+           {"sheet": "Mileage Log", "row": 1, "column": "Deduction", "value": 72.5},
+           {"sheet": "Mileage Log", "row": 2, "column": "Deduction", "value": 76},
+           {"sheet": "Mileage Log", "row": 3, "column": "Deduction", "value": 7},
+           {"sheet": "Summary", "label": "Business Miles", "value": 200},
+           {"sheet": "Summary", "label": "Mileage Deduction", "value": 148.5},
+           {"sheet": "Summary", "label": "Total Miles Driven", "value": 20000},
+           {"sheet": "Summary", "label": "Business Use %", "value": 0.01}
+         ]},
+        {"name": "an edited IRS rate flows through to the deduction",
+         "inputs": [
+           {"sheet": "IRS Rates", "row": 3, "column": "Rate per Mile", "value": 0.8},
+           {"sheet": "Mileage Log", "row": 1, "column": "Date", "value": "2026-08-10"},
+           {"sheet": "Mileage Log", "row": 1, "column": "Business Miles", "value": 100}
+         ],
+         "expect": [
+           {"sheet": "Mileage Log", "row": 1, "column": "Deduction", "value": 80}
+         ]}
+      ]
+    },
+    {
+      "name": "Supply_Cost_Tracker.xlsx",
+      "kind": "xlsx",
+      "sheets": [
+        {"name": "How to use"},
+        {"name": "Supplies", "header_row": 1, "freeze_header": true,
+         "columns": ["Date", "Supplier", "Product", "Category", "Quantity", "Unit", "Cost per Unit", "Total Cost",
+                     "Jobs per Unit", "Cost per Job", "Notes"],
+         "validated_columns": ["Date", "Category", "Quantity", "Cost per Unit", "Jobs per Unit"]},
+        {"name": "Summary"},
+        {"name": "Lists"}
+      ],
+      "scenarios": [
+        {"name": "empty template shows zero spend",
+         "inputs": [],
+         "expect": [{"sheet": "Summary", "label": "Total Supply Spend", "value": 0}]},
+        {"name": "4 units at $12.50 cost $50; 10 jobs per unit is $1.25 per job",
+         "inputs": [
+           {"sheet": "Summary", "label": "Tax Year", "value": 2026},
+           {"sheet": "Supplies", "row": 1, "column": "Date", "value": "2026-02-01"},
+           {"sheet": "Supplies", "row": 1, "column": "Category", "value": "Chemicals"},
+           {"sheet": "Supplies", "row": 1, "column": "Quantity", "value": 4},
+           {"sheet": "Supplies", "row": 1, "column": "Cost per Unit", "value": 12.5},
+           {"sheet": "Supplies", "row": 1, "column": "Jobs per Unit", "value": 10}
+         ],
+         "expect": [
+           {"sheet": "Supplies", "row": 1, "column": "Total Cost", "value": 50},
+           {"sheet": "Supplies", "row": 1, "column": "Cost per Job", "value": 1.25},
+           {"sheet": "Summary", "label": "Total Supply Spend", "value": 50},
+           {"sheet": "Summary", "label": "Spend by Category", "row_offset": 1, "offset": 1, "value": 50}
+         ]}
+      ]
+    },
+    {
+      "name": "Customer_Log.xlsx",
+      "kind": "xlsx",
+      "sheets": [
+        {"name": "How to use"},
+        {"name": "Customers", "header_row": 1, "freeze_header": true,
+         "columns": ["Customer Name", "Phone", "Email", "Service Address", "Vehicle(s)", "Preferred Service",
+                     "Jobs", "Total Spent", "Unpaid Balance", "Last Visit", "Notes"],
+         "validated_columns": ["Preferred Service"]},
+        {"name": "Job History", "header_row": 1, "freeze_header": true,
+         "columns": ["Date", "Customer Name", "Vehicle", "Service", "Price", "Paid?", "Payment Method", "Notes"],
+         "validated_columns": ["Date", "Customer Name", "Service", "Price", "Paid?", "Payment Method"]},
+        {"name": "Lists"}
+      ],
+      "scenarios": [
+        {"name": "two jobs for one customer roll up to visits, spend, balance and last visit",
+         "inputs": [
+           {"sheet": "Customers", "row": 1, "column": "Customer Name", "value": "Jane Doe"},
+           {"sheet": "Customers", "row": 2, "column": "Customer Name", "value": "Sam Lee"},
+           {"sheet": "Job History", "row": 1, "column": "Date", "value": "2026-04-01"},
+           {"sheet": "Job History", "row": 1, "column": "Customer Name", "value": "Jane Doe"},
+           {"sheet": "Job History", "row": 1, "column": "Price", "value": 150},
+           {"sheet": "Job History", "row": 1, "column": "Paid?", "value": "Yes"},
+           {"sheet": "Job History", "row": 2, "column": "Date", "value": "2026-05-02"},
+           {"sheet": "Job History", "row": 2, "column": "Customer Name", "value": "Jane Doe"},
+           {"sheet": "Job History", "row": 2, "column": "Price", "value": 90},
+           {"sheet": "Job History", "row": 2, "column": "Paid?", "value": "No"}
+         ],
+         "expect": [
+           {"sheet": "Customers", "row": 1, "column": "Jobs", "value": 2},
+           {"sheet": "Customers", "row": 1, "column": "Total Spent", "value": 240},
+           {"sheet": "Customers", "row": 1, "column": "Unpaid Balance", "value": 90},
+           {"sheet": "Customers", "row": 1, "column": "Last Visit", "value": "2026-05-02"},
+           {"sheet": "Customers", "row": 2, "column": "Jobs", "value": 0},
+           {"sheet": "Customers", "row": 2, "column": "Last Visit", "value": ""},
+           {"sheet": "Customers", "row": 3, "column": "Jobs", "value": ""}
+         ]}
+      ]
+    },
+    {
+      "name": "Instructions.pdf",
+      "kind": "pdf",
+      "min_pages": 3,
+      "max_pages": 10,
+      "required_headings": ["What's Included", "Getting Started", "Using Google Sheets", "Income & Expense Tracker",
+                            "Mileage Log", "Supply Cost Tracker", "Customer Log", "Tax Time Tips",
+                            "Important Notes"]
+    },
+    {
+      "name": "README.txt",
+      "kind": "text",
+      "required_phrases": ["Income_Expense_Tracker.xlsx", "Mileage_Log.xlsx", "Supply_Cost_Tracker.xlsx",
+                           "Customer_Log.xlsx", "Instructions.pdf", "not tax advice"]
+    }
+  ]
+}

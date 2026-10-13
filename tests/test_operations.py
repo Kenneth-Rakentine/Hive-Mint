@@ -3,7 +3,7 @@ import json
 import pytest
 from sqlalchemy import select
 
-from agents.departments import HANDLERS, StageResult
+from agents.departments import STUB_HANDLERS, StageResult
 from agents.operations import ROUTING, OperationsManager
 from app.lifecycle import transition
 from app.models import AgentRun, Event, Job
@@ -39,7 +39,7 @@ def test_no_automated_owner_for_human_or_closed_states(status):
 
 
 def test_every_routed_department_has_a_handler():
-    assert {d for d in ROUTING.values() if d} <= set(HANDLERS)
+    assert {d for d in ROUTING.values() if d} <= set(STUB_HANDLERS)
 
 
 def test_testing_qa_and_red_team_are_separate_departments():
@@ -89,7 +89,7 @@ def test_failed_handler_retries_then_errors(session, settings, make_product):
         calls.append(job.attempts)
         raise RuntimeError("generator crashed")
 
-    ops = OperationsManager(session, settings, handlers={**HANDLERS, Department.OPERATIONS: broken})
+    ops = OperationsManager(session, settings, handlers={**STUB_HANDLERS, Department.OPERATIONS: broken})
     product = make_product()
     job = ops.next_job(product)
     ops.run_job(job)
@@ -104,7 +104,7 @@ def test_handler_returning_illegal_move_is_treated_as_failure(session, settings,
     def cheater(product, job):
         return StageResult(Outcome.PASS, S.PUBLISHED, "skip everything")
 
-    ops = OperationsManager(session, settings, handlers={**HANDLERS, Department.OPERATIONS: cheater})
+    ops = OperationsManager(session, settings, handlers={**STUB_HANDLERS, Department.OPERATIONS: cheater})
     product = make_product()
     ops.run_job(ops.next_job(product))
     assert product.status == S.ERROR
@@ -131,7 +131,7 @@ def test_rework_routes_back_to_production_after_testing_failure(session, setting
 
 
 def test_tick_drives_idea_to_human_review_and_stops(session, settings, make_product):
-    ops = OperationsManager(session, settings)
+    ops = OperationsManager(session, settings, handlers=STUB_HANDLERS)
     product = make_product()
     session.commit()
     total = 0
