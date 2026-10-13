@@ -34,6 +34,8 @@ S = ProductStatus
 TOLERANCE = 0.005  # half a cent
 MAX_REASONS_IN_SUMMARY = 8
 _STRING_LITERAL = re.compile(r'"[^"]*"')
+_CHART_REF = re.compile(r"^(?:'(?P<quoted>(?:[^']|'')+)'|(?P<plain>[^!']+))!"
+                        r"(?P<range>\$?[A-Z]+\$?\d+(?::\$?[A-Z]+\$?\d+)?)$")
 _FUNCTION = re.compile(r"(?<![A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_.]*)\s*\(")
 
 
@@ -172,6 +174,8 @@ def check_workbook(spec: dict, file_spec: dict, rules: dict, path: Path, *, engi
     for sheet in file_spec["sheets"]:
         if sheet["name"] in wb.sheetnames and "columns" in sheet:
             checks += _check_table(wb[sheet["name"]], sheet, f"{name}:{sheet['name']}")
+        if sheet["name"] in wb.sheetnames and "charts" in sheet:
+            checks.append(_check_charts(wb, sheet, f"{name}:{sheet['name']}"))
 
     checks += _check_formulas(wb, rules, name)
     if rate_table := file_spec.get("rate_table"):
@@ -279,6 +283,69 @@ def _check_formulas(wb, rules: dict, name: str) -> list[Check]:
                             f"external link in {', '.join(external[:5])}" if external else "",
                         ]))))
     return checks
+
+
+def _chart_title(chart) -> str:
+    try:
+        return "".join(run.t for p in chart.title.tx.rich.p for run in (p.r or []))
+    except AttributeError:
+        return ""
+
+
+def _series_refs(series) -> list[str]:
+    refs = []
+    for source in (series.val, series.cat):
+        if source is None:
+            continue
+        for ref in (getattr(source, "numRef", None), getattr(source, "strRef", None)):
+            if ref is not None and ref.f:
+                refs.append(ref.f)
+    if series.tx is not None and series.tx.strRef is not None:
+        refs.append(series.tx.strRef.f)
+    return refs
+
+
+def _ref_problem(wb, ref: str) -> str | None:
+    """A chart data reference must name an existing sheet and a range with formulas or values in it."""
+    match = _CHART_REF.match(ref)
+    if not match:
+        return f"unreadable reference {ref}"
+    sheet = match["quoted"].replace("''", "'") if match["quoted"] else match["plain"]
+    if sheet not in wb.sheetnames:
+        return f"{ref} points at missing sheet '{sheet}'"
+    ws = wb[sheet]
+    try:
+        min_col, min_row, max_col, max_row = range_boundaries(match["range"].replace("$", ""))
+    except ValueError:
+        return f"unreadable range in {ref}"
+    cells = [ws.cell(r, c).value for r in range(min_row, (max_row or min_row) + 1)
+             for c in range(min_col, (max_col or min_col) + 1)]
+    if all(v is None for v in cells):
+        return f"{ref} is empty"
+    return None
+
+
+def _check_charts(wb, sheet: dict, target: str) -> Check:
+    """Charts exist with the spec'd titles and series, and every series reads real cells."""
+    charts = wb[sheet["name"]]._charts
+    expected = sheet["charts"]
+    problems = []
+    if len(charts) != len(expected):
+        problems.append(f"{len(charts)} chart(s), expected {len(expected)}")
+    by_title = {_chart_title(c): c for c in charts}
+    for want in expected:
+        chart = by_title.get(want["title"])
+        if chart is None:
+            problems.append(f"no chart titled '{want['title']}'")
+            continue
+        if len(chart.series) != want.get("series", len(chart.series)):
+            problems.append(f"'{want['title']}' has {len(chart.series)} series, expected {want['series']}")
+        for series in chart.series:
+            refs = _series_refs(series)
+            if not refs:
+                problems.append(f"'{want['title']}' has a series with no data reference")
+            problems += [f"'{want['title']}': {p}" for ref in refs if (p := _ref_problem(wb, ref))]
+    return Check("charts", target, not problems, "; ".join(problems))
 
 
 def _check_rate_table(wb, rate_table: dict, expected: list[dict], name: str) -> Check:

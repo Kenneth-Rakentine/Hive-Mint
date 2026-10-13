@@ -32,9 +32,18 @@ def _failed(checks):
     return {(c.check, c.target): c.detail for c in checks if not c.passed}
 
 
-def _check_one_workbook(spec, build_dir, name):
-    return check_workbook(spec, _file_spec(spec, name), spec["spreadsheet_rules"], build_dir / name,
-                          engine="formulas", soffice=None)
+WORKBOOK = "Mobile_Detailer_Business_Tracker.xlsx"
+
+
+def _check_one_workbook(spec, build_dir, only=None):
+    """Check the workbook. only: scenario-name fragments to run (a full recalc of every scenario is slow);
+    [] runs just the empty-template recalculation."""
+    file_spec = _file_spec(spec, WORKBOOK)
+    if only is not None:
+        file_spec = {**file_spec, "scenarios": [sc for sc in file_spec["scenarios"]
+                                                if any(fragment in sc["name"] for fragment in only)]}
+    return check_workbook(spec, file_spec, spec["spreadsheet_rules"], build_dir / WORKBOOK, engine="formulas",
+                          soffice=None)
 
 
 def _edit(path, edit):
@@ -43,8 +52,8 @@ def _edit(path, edit):
     wb.save(path)
 
 
-def _summary_cell(wb, label, offset=1):
-    ws = wb["Summary"]
+def _label_cell(wb, sheet, label, offset=1):
+    ws = wb[sheet]
     cell = next(c for row in ws.iter_rows() for c in row if c.value == label)
     return ws.cell(cell.row, cell.column + offset)
 
@@ -59,7 +68,7 @@ def test_every_spec_item_was_checked(good_checks, sample_spec):
     kinds = {c.check for c in good_checks}
     assert {"file_exists", "build_folder_clean", "zip_opens", "zip_contents", "zip_matches_build",
             "workbook_opens", "sheets_present", "columns_present", "header_frozen", "data_validation",
-            "functions_compatible", "formula_text_clean", "no_error_values", "rate_table", "scenario",
+            "functions_compatible", "formula_text_clean", "no_error_values", "rate_table", "scenario", "charts",
             "pdf_opens", "pdf_page_count", "pdf_headings", "text_readable", "text_phrases"} <= kinds
     scenarios = [f"{f['name']}: {s['name']}" for f in sample_spec["files"] for s in f.get("scenarios", [])]
     assert sorted(c.target for c in good_checks if c.check == "scenario") == sorted(scenarios)
@@ -69,87 +78,113 @@ def test_every_spec_item_was_checked(good_checks, sample_spec):
 def test_spec_includes_the_milestone_scenarios(sample_spec):
     expectations = [(e.get("label") or e.get("column"), e["value"])
                     for f in sample_spec["files"] for s in f.get("scenarios", []) for e in s.get("expect", [])]
-    assert ("Net Profit", 750) in expectations
+    assert ("Net Profit", 700) in expectations  # $1,000 income - $250 expenses - $50 supplies
     assert ("Deduction", 72.5) in expectations  # 100 miles x $0.725
+    assert ("Profit After Mileage", 551.5) in expectations
+    assert ("Tax Set-Aside", 110.3) in expectations  # 20% of profit after mileage
+    assert ("Tax Set-Aside", 0) in expectations  # nothing set aside on a loss
+
+
+def test_spec_v2_is_one_workbook_that_resolves_the_first_rework_brief(sample_spec):
+    assert sample_spec["spec_version"] == 2
+    assert [f["name"] for f in sample_spec["files"] if f["kind"] == "xlsx"] == [WORKBOOK]
+    assert set(sample_spec["resolves"]) == {"merge_workbooks", "dashboard_charts", "profit_after_mileage",
+                                            "tax_set_aside"}
 
 
 # --------------------------------------------------------------------------- broken workbooks
 
 def test_wrong_profit_formula_fails_the_profit_scenario(sample_spec, build_copy):
     def break_profit(wb):
-        ws = wb["Summary"]
         for row in range(7, 19):
-            ws[f"D{row}"] = f"=B{row}+C{row}"  # adds expenses instead of subtracting
-    _edit(build_copy / "Income_Expense_Tracker.xlsx", break_profit)
+            wb["Summary"][f"E{row}"] = f"=B{row}+C{row}+D{row}"  # adds costs instead of subtracting
+    _edit(build_copy / WORKBOOK, break_profit)
 
-    failed = _failed(_check_one_workbook(sample_spec, build_copy, "Income_Expense_Tracker.xlsx"))
+    failed = _failed(_check_one_workbook(sample_spec, build_copy, only=["income $1,000"]))
     detail = next(d for (check, _), d in failed.items() if check == "scenario")
-    assert "Net Profit" in detail and "expected 750" in detail and "1250" in detail
+    assert "Net Profit" in detail and "expected 700" in detail and "1300" in detail
 
 
 def test_division_by_zero_is_caught_on_the_empty_template(sample_spec, build_copy):
-    _edit(build_copy / "Income_Expense_Tracker.xlsx",
-          lambda wb: setattr(_summary_cell(wb, "Profit Margin"), "value", "=D19/B19"))  # no zero guard
+    _edit(build_copy / WORKBOOK,
+          lambda wb: setattr(_label_cell(wb, "Dashboard", "Profit Margin"), "value", "=B13/B11"))  # no zero guard
 
-    failed = _failed(_check_one_workbook(sample_spec, build_copy, "Income_Expense_Tracker.xlsx"))
-    detail = failed[("no_error_values", "Income_Expense_Tracker.xlsx: empty template")]
-    assert "#DIV/0!" in detail and "Summary!G10" in detail
+    failed = _failed(_check_one_workbook(sample_spec, build_copy, only=[]))
+    detail = failed[("no_error_values", f"{WORKBOOK}: empty template")]
+    assert "#DIV/0!" in detail and "Dashboard!B14" in detail
 
 
 def test_ref_value_and_name_errors_are_caught(sample_spec, build_copy):
     def break_cells(wb):
         ws = wb["Summary"]
-        ws["J1"] = "=#REF!+1"
-        ws["J2"] = '="abc"+1'
-        ws["J3"] = "=NOSUCHFUNCTION(1)"
-        ws["J4"] = "=XLOOKUP(1,A1:A2,B1:B2)"  # real in Excel 365, missing from older Excel
-    _edit(build_copy / "Income_Expense_Tracker.xlsx", break_cells)
+        ws["P1"] = "=#REF!+1"
+        ws["P2"] = '="abc"+1'
+        ws["P3"] = "=NOSUCHFUNCTION(1)"
+        ws["P4"] = "=XLOOKUP(1,A1:A2,B1:B2)"  # real in Excel 365, missing from older Excel
+    _edit(build_copy / WORKBOOK, break_cells)
 
-    failed = _failed(_check_one_workbook(sample_spec, build_copy, "Income_Expense_Tracker.xlsx"))
-    template_errors = failed[("no_error_values", "Income_Expense_Tracker.xlsx: empty template")]
+    failed = _failed(_check_one_workbook(sample_spec, build_copy, only=[]))
+    template_errors = failed[("no_error_values", f"{WORKBOOK}: empty template")]
     for error in ("#REF!", "#VALUE!", "#NAME?"):
         assert error in template_errors
-    assert "XLOOKUP" in failed[("functions_compatible", "Income_Expense_Tracker.xlsx")]
-    assert "Summary!J1" in failed[("formula_text_clean", "Income_Expense_Tracker.xlsx")]
+    assert "XLOOKUP" in failed[("functions_compatible", WORKBOOK)]
+    assert "Summary!P1" in failed[("formula_text_clean", WORKBOOK)]
 
 
 def test_missing_column_and_sheet_are_caught(sample_spec, build_copy):
     def break_layout(wb):
-        wb["Income"]["G1"] = "Gratuity"  # spec requires "Tip"
+        wb["Jobs"]["G1"] = "Gratuity"  # spec requires "Tip"
         del wb["Lists"]
-    _edit(build_copy / "Income_Expense_Tracker.xlsx", break_layout)
+    _edit(build_copy / WORKBOOK, break_layout)
 
-    failed = _failed(_check_one_workbook(sample_spec, build_copy, "Income_Expense_Tracker.xlsx"))
-    assert "Tip" in failed[("columns_present", "Income_Expense_Tracker.xlsx:Income")]
-    assert "Lists" in failed[("sheets_present", "Income_Expense_Tracker.xlsx")]
+    failed = _failed(_check_one_workbook(sample_spec, build_copy))
+    assert "Tip" in failed[("columns_present", f"{WORKBOOK}:Jobs")]
+    assert "Lists" in failed[("sheets_present", WORKBOOK)]
 
 
 def test_unfrozen_header_and_missing_validation_are_caught(sample_spec, build_copy):
     def loosen(wb):
         wb["Expenses"].freeze_panes = None
         wb["Expenses"].data_validations.dataValidation = []
-    _edit(build_copy / "Income_Expense_Tracker.xlsx", loosen)
+    _edit(build_copy / WORKBOOK, loosen)
 
-    checks = check_workbook(sample_spec, _file_spec(sample_spec, "Income_Expense_Tracker.xlsx"),
-                            sample_spec["spreadsheet_rules"], build_copy / "Income_Expense_Tracker.xlsx",
-                            engine="formulas")
-    failed = _failed(checks)
-    assert ("header_frozen", "Income_Expense_Tracker.xlsx:Expenses") in failed
-    assert "Category" in failed[("data_validation", "Income_Expense_Tracker.xlsx:Expenses")]
+    failed = _failed(_check_one_workbook(sample_spec, build_copy, only=[]))
+    assert ("header_frozen", f"{WORKBOOK}:Expenses") in failed
+    assert "Category" in failed[("data_validation", f"{WORKBOOK}:Expenses")]
 
 
 def test_wrong_irs_rate_is_caught(sample_spec, build_copy):
-    _edit(build_copy / "Mileage_Log.xlsx", lambda wb: wb["IRS Rates"].cell(3, 2, 0.65))
+    _edit(build_copy / WORKBOOK, lambda wb: wb["IRS Rates"].cell(3, 2, 0.65))
 
-    failed = _failed(_check_one_workbook(sample_spec, build_copy, "Mileage_Log.xlsx"))
-    assert ("rate_table", "Mileage_Log.xlsx:IRS Rates") in failed
+    failed = _failed(_check_one_workbook(sample_spec, build_copy, only=["100 miles"]))
+    assert ("rate_table", f"{WORKBOOK}:IRS Rates") in failed
     assert any(check == "scenario" and "expected 72.5" in d for (check, _), d in failed.items())
 
 
 def test_corrupt_workbook_fails_to_open(sample_spec, build_copy):
-    (build_copy / "Customer_Log.xlsx").write_bytes(b"not a spreadsheet")
-    failed = _failed(_check_one_workbook(sample_spec, build_copy, "Customer_Log.xlsx"))
-    assert list(failed) == [("workbook_opens", "Customer_Log.xlsx")]
+    (build_copy / WORKBOOK).write_bytes(b"not a spreadsheet")
+    failed = _failed(_check_one_workbook(sample_spec, build_copy))
+    assert list(failed) == [("workbook_opens", WORKBOOK)]
+
+
+def test_dashboard_charts_read_the_summary(good_build):
+    wb = load_workbook(good_build / WORKBOOK)
+    charts = wb["Dashboard"]._charts
+    assert len(charts) == 3
+    refs = [ref for chart in charts for series in chart.series for ref in testing._series_refs(series)]
+    assert refs and all(ref.startswith("'Summary'!") or ref.startswith("Summary!") for ref in refs)
+
+
+def test_missing_or_broken_chart_is_caught(sample_spec, good_build):
+    sheet = next(s for s in _file_spec(sample_spec, WORKBOOK)["sheets"] if s["name"] == "Dashboard")
+    wb = load_workbook(good_build / WORKBOOK)
+    wb["Dashboard"]._charts[0].series[0].val.numRef.f = "'Nowhere'!$B$7:$B$18"
+    detail = testing._check_charts(wb, sheet, "Dashboard").detail
+    assert "missing sheet 'Nowhere'" in detail
+
+    wb["Dashboard"]._charts.pop()
+    check = testing._check_charts(wb, sheet, "Dashboard")
+    assert not check.passed and "2 chart(s), expected 3" in check.detail
 
 
 # --------------------------------------------------------------------------- files, ZIP, PDF, README
@@ -162,7 +197,7 @@ def test_missing_and_extra_files_are_caught(sample_spec, build_copy):
     assert "Thumbs.db" in failed[("build_folder_clean", "v1")]
 
 
-@pytest.mark.parametrize("junk", ["__MACOSX/._Mileage_Log.xlsx", ".DS_Store", "build.log"])
+@pytest.mark.parametrize("junk", ["__MACOSX/._Mobile_Detailer_Business_Tracker.xlsx", ".DS_Store", "build.log"])
 def test_zip_with_build_junk_fails(sample_spec, build_copy, junk):
     zip_path = build_copy / sample_spec["zip_name"]
     recorded = sha256(zip_path)
@@ -251,8 +286,8 @@ def test_broken_workbook_sends_product_to_rework_with_reasons(session, settings,
                                                               build_copy):
     def break_profit(wb):
         for row in range(7, 19):
-            wb["Summary"][f"D{row}"] = f"=B{row}+C{row}"
-    _edit(build_copy / "Income_Expense_Tracker.xlsx", break_profit)
+            wb["Summary"][f"E{row}"] = f"=B{row}+C{row}+D{row}"
+    _edit(build_copy / WORKBOOK, break_profit)
     make_zip(build_copy / sample_spec["zip_name"], [build_copy / n for n in file_names(sample_spec)])
     advance_to(session, settings, sample_product, S.TESTING)
     build = _record_build(session, sample_product, build_copy, sample_spec)
@@ -267,9 +302,9 @@ def test_broken_workbook_sends_product_to_rework_with_reasons(session, settings,
     assert results and all(r.build_id == build.id and r.product_id == sample_product.id for r in results)
     assert all(r.agent_run_id is not None for r in results)
     failed = [r for r in results if not r.passed]
-    assert [r.check for r in failed] == ["scenario"]
+    assert failed and {r.check for r in failed} == {"scenario"}
     output = json.loads(job.output_json)
-    assert output["outcome"] == "FAIL" and output["failed"] == 1 and output["engine"] == "formulas"
+    assert output["outcome"] == "FAIL" and output["failed"] == len(failed) and output["engine"] == "formulas"
 
 
 def test_passing_build_moves_product_to_qa(session, settings, sample_product, sample_spec, good_build, good_checks,

@@ -42,32 +42,44 @@ def test_production_builds_every_spec_file_and_the_zip(session, settings, sample
     assert not list(out.parent.glob(".*staging"))
 
 
-def test_workbooks_use_live_formulas_and_buyer_friendly_layout(good_build, sample_spec):
-    for file_spec in (f for f in sample_spec["files"] if f["kind"] == "xlsx"):
-        wb = load_workbook(good_build / file_spec["name"])
-        assert wb.sheetnames[0] == "How to use"
-        assert [s["name"] for s in file_spec["sheets"]] == wb.sheetnames
-        for sheet in (s for s in file_spec["sheets"] if "columns" in s):
-            ws = wb[sheet["name"]]
-            assert ws.freeze_panes == "A2"
-            assert all(ws.column_dimensions[c.column_letter].width >= 8 for c in ws[1] if c.value)
+def test_workbook_uses_live_formulas_and_buyer_friendly_layout(good_build, sample_spec):
+    (file_spec,) = (f for f in sample_spec["files"] if f["kind"] == "xlsx")
+    wb = load_workbook(good_build / file_spec["name"])
+    assert wb.sheetnames[0] == "How to Use"
+    assert [s["name"] for s in file_spec["sheets"]] == wb.sheetnames
+    for sheet in (s for s in file_spec["sheets"] if "columns" in s):
+        ws = wb[sheet["name"]]
+        assert ws.freeze_panes == "A2"
+        assert all(ws.column_dimensions[c.column_letter].width >= 8 for c in ws[1] if c.value)
 
-    wb = load_workbook(good_build / "Income_Expense_Tracker.xlsx")
-    summary = wb["Summary"]
-    net_profit = next(c for row in summary.iter_rows() for c in row if c.value == "Net Profit")
-    assert str(summary.cell(net_profit.row, net_profit.column + 1).value).startswith("=")
-    assert wb["Income"]["H2"].value.startswith("=") and wb["Income"]["H2"].number_format == '"$"#,##0.00'
-    assert wb["Income"]["A2"].number_format == "mm/dd/yyyy"
+    dashboard = wb["Dashboard"]
+    cells = {c.value: dashboard.cell(c.row, c.column + 1) for row in dashboard.iter_rows() for c in row
+             if isinstance(c.value, str)}
+    assert str(cells["Net Profit"].value).startswith("=")
+    assert cells["Tax Set-Aside %"].value == sample_spec["parameters"]["tax_set_aside_pct"]
+    assert cells["Tax Set-Aside"].value == "=ROUND(MAX(0,B16)*B6,2)"
+    assert wb["Jobs"]["H2"].value.startswith("=") and wb["Jobs"]["H2"].number_format == '"$"#,##0.00'
+    assert wb["Jobs"]["A2"].number_format == "mm/dd/yyyy"
+    assert len(dashboard._charts) == 3
 
-    rates = load_workbook(good_build / "Mileage_Log.xlsx")["IRS Rates"]
+    rates = wb["IRS Rates"]
     assert [rates.cell(r, 2).value for r in range(2, 2 + len(sample_spec["parameters"]["irs_mileage_rates"]))] == \
         [r["rate"] for r in sample_spec["parameters"]["irs_mileage_rates"]]
+
+
+def test_one_job_entry_feeds_income_and_customer_history(good_build):
+    """No double entry: customer rollups and Summary income both read the Jobs tab."""
+    wb = load_workbook(good_build / "Mobile_Detailer_Business_Tracker.xlsx")
+    customers = wb["Customers"]
+    jobs_col = next(c.column for c in customers[1] if c.value == "Total Spent")
+    assert "'Jobs'!" in customers.cell(2, jobs_col).value
+    assert "'Jobs'!" in wb["Summary"]["B7"].value and "'Supplies'!" in wb["Summary"]["D7"].value
 
 
 def test_instructions_pdf_and_readme_are_readable(good_build):
     reader = PdfReader(good_build / "Instructions.pdf")
     assert len(reader.pages) >= 2
-    assert "Mileage Log" in reader.pages[0].extract_text() + reader.pages[1].extract_text()
+    assert "Dashboard" in reader.pages[0].extract_text() + reader.pages[1].extract_text()
     assert "not tax advice" in (good_build / "README.txt").read_text(encoding="utf-8")
 
 

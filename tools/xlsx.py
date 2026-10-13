@@ -42,7 +42,7 @@ class Column:
 
     formula: template with {r} for the row number and {col[Header]} for another column's letter,
         or a callable (r, letters) -> formula text.
-    validation: "date", "money", "number", "yesno", or "list:<range>".
+    validation: "date", "money", "number", "percent", "yesno", or "list:<range>".
     """
 
     header: str
@@ -107,6 +107,9 @@ def add_validation(ws: Worksheet, kind: str, cells: str) -> DataValidation:
     elif kind == "number":
         dv = DataValidation(type="decimal", operator="greaterThanOrEqual", formula1="0",
                             error="Enter a number of 0 or more.", errorTitle="Number needed")
+    elif kind == "percent":
+        dv = DataValidation(type="decimal", operator="between", formula1="0", formula2="1",
+                            error="Enter a percentage from 0% to 100%, e.g. 25%.", errorTitle="Percentage needed")
     elif kind == "yesno":
         dv = DataValidation(type="list", formula1='"Yes,No"', error="Choose Yes or No.", errorTitle="Yes or No")
     elif kind.startswith("list:"):
@@ -125,7 +128,7 @@ def add_validation(ws: Worksheet, kind: str, cells: str) -> DataValidation:
 def write_how_to(wb: Workbook, title: str, intro: str, steps: list[str], notes: list[str]) -> Worksheet:
     """A short first sheet telling the buyer how to use the workbook."""
     ws = wb.active
-    ws.title = "How to use"
+    ws.title = "How to Use"
     ws.column_dimensions["A"].width = 4
     ws.column_dimensions["B"].width = 100
     ws["B1"] = title
@@ -133,7 +136,7 @@ def write_how_to(wb: Workbook, title: str, intro: str, steps: list[str], notes: 
     ws["B2"] = intro
     ws["B2"].alignment = WRAP
     row = 4
-    ws.cell(row=row, column=2, value="How to use").font = SUBTITLE_FONT
+    ws.cell(row=row, column=2, value="How to Use").font = SUBTITLE_FONT
     for number, step in enumerate(steps, start=1):
         row += 1
         ws.cell(row=row, column=1, value=number).alignment = Alignment(horizontal="right", vertical="top")
