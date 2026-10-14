@@ -63,6 +63,14 @@ Side states: `REWORK`, `REJECTED`, `PAUSED`, `RETIRED`, `ERROR`.
 - Retries are bounded: per job (`MAX_JOB_ATTEMPTS`) and per product rework cycle (`MAX_REWORK_CYCLES`).
 - Secrets live only in `.env`, which is gitignored. Never commit keys, customer data or `data/`.
 
+## Storage & cleanup tracking
+
+Whenever you install, download, create, cache or change anything outside the repo (or anything large inside it), update the cleanup report in the same session. Never leave it stale.
+
+- The report is the plain text file `Hive Mint Storage for Cleanup.txt` on the owner's Desktop. Find the real path with `[Environment]::GetFolderPath('Desktop')`, since it may be redirected to OneDrive.
+- Check the machine before you edit the report; don't rely on memory. Record each item's exact path, current size, how it got there and the exact removal steps, then update "Last updated" and the size totals.
+- The report is documentation only. Never run its removal commands.
+
 ## Architecture
 
 - Storefronts (Etsy, Gumroad, etc.) are **output adapters**, not the core. The core is products, gates and the database.
