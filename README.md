@@ -4,7 +4,7 @@ Hive-Mint is a local-first, AI-operated company that researches, builds, tests a
 
 The permanent operating rules are in [CLAUDE.md](CLAUDE.md).
 
-**Status: milestone v0.2.** Production and Testing are real for the sample product, "Mobile Auto Detailer Income & Expense Tracker". The other departments are still stubs.
+**Status: milestone v0.4 "Autopilot".** Hive-Mint runs an unattended shift every afternoon (1 PM-10 PM local): it researches niches, scores opportunities, writes specs for the best, builds and tests them, reviews them (QA, Visual QA, Red Team), reworks what reviewers flag, and leaves finished products in HUMAN_REVIEW with a daily report on the Desktop. SEO is still a stub, and nothing is ever published without your approval.
 
 ## Run on Windows 11 (PowerShell)
 
@@ -32,6 +32,11 @@ python -m app.cli review-export 1      # Red Team packet for product 1 (or /hive
 python -m app.cli review-import 1 research\reviews\1\verdict.json
 python -m app.cli rework 1 brief.json  # send a product back with a structured rework brief
 python -m app.cli resume 1             # return a PAUSED or ERROR product to its gate
+python -m app.cli research --niche "independent motel night audit"   # headless Claude + web search
+python -m app.cli shift                # one unattended shift (add --ignore-window outside 1-10 PM)
+python -m app.cli approve-rework 1     # grant product 1 one more rework cycle (resumes it if paused)
+python -m app.cli spec-check spec.json # validate, build and test a spec file; changes nothing
+python -m app.cli report               # rewrite "Hive Mint Daily Report.txt" on the Desktop
 uvicorn app.api:app --host 127.0.0.1 --port 8000
 ```
 
@@ -102,19 +107,60 @@ The demo writes the product to `products\<product id>\v1\`, including `Mobile_De
 - **Detailer tracker v3** (spec v3, rework brief 002): chart titles and legend clear of the plot, Jan-Dec labels with no rotation, fixed $1,000 axis steps (so an empty workbook shows $0 and $1,000), loss months shown below zero, and 500x300 px charts that fit Excel at 100% zoom on a 1920 px screen at 125% scaling.
 - **Disk guard**: Production jobs pause with `DISK_LIMIT` when free space drops below `MIN_FREE_DISK_GB` (50) or the Hive-Mint folder grows past `MAX_HIVEMINT_STORAGE_GB` (20). They resume automatically once space is back. `status` and `GET /status` show free space, the Hive-Mint folder size and the Ollama model folder size.
 
+## What v0.4 adds ("Autopilot")
+
+- **Headless Claude Code provider** (`providers/claude_headless.py`, Tier 2): `claude -p` on your Max subscription.
+  - **Billing guard:** before every run it refuses if `ANTHROPIC_API_KEY` (or another pay-per-use variable) is set, or if `claude auth status` doesn't show a claude.ai login with the Max plan. Those variables are also stripped from the child process.
+  - **Daily cap:** `MAX_CLAUDE_RUNS_PER_DAY` (15). The cost Claude reports is logged on the `AgentRun` but not counted against the $1/$20 cloud caps, which stay reserved for future metered APIs.
+  - **Safety** (`providers/headless_policy.py`): every run works in the repo with `--restricted`, no MCP servers and `--permission-mode dontAsk`, plus a per-role tool and allow list taken from one ceiling. git, installs, deletes, PowerShell and anything outside the repo are denied. Headless runs never touch the Desktop; plain Python writes the reports.
+  - **Logging:** every run is an `AgentRun` with tokens, duration and outcome, and its raw output is kept in `logs/headless/`.
+- **Research** (`agents/research.py`): `research --niche` gathers evidence by web search and public pages only (no scraping or logging in): what sells, price ranges, common contents, buyer complaints, gaps, source URLs and a confidence level, plus candidate opportunities. Code checks the evidence (at least 3 sources, every factor cited, no brand names) before storing it in `research_records` and `opportunities`. Seed niches are in `config/niches.py`.
+- **Finance** (`agents/finance.py`): the weighted opportunity formula.
+  - Weights: demand .25, competition .15, margin .15, ease .10, differentiation .15, support burden .10, automation suitability .10. Each factor is scored 1-5; competition and support burden are inverted. The total is scaled to 0-100.
+  - Deterministic adjustments, each recorded with its reason: margin from the price range after fees, automation suitability for types Production can't build, and a penalty for medium confidence.
+  - Only the top `MAX_OPPORTUNITIES_PER_SHIFT` at or above `OPPORTUNITY_THRESHOLD` (65) become products.
+- **General spreadsheet builder** (`tools/builders/spreadsheet.py`):
+  - Builds any workbook + PDF + README product from its spec: tables with formulas, free-form layout sheets (dashboards, monthly grids), lists, charts, example workbooks pre-filled with sample data, and the PDF and README text.
+  - The detailer tracker is now just spec v4 (`config/specs/`). A parity test confirmed it matches the old hand-written builder cell for cell before that builder was removed.
+  - Testing gained `nonzero` / `blank` / `nonblank` expectations. Visual QA knows whether it is looking at a blank template or a filled example.
+- **Specs in the database** (`spec_versions`, `tools/spec_store.py`): every version is stored with a unified diff against the previous one and copied to `products/<id>/spec-v<n>.json`.
+- **Product Design** (`agents/spec_writer.py`):
+  - Headless Claude writes a new product's spec, or revises one when QA, Red Team, Testing or Compliance sends it back. It checks its own draft with `spec-check` until the build passes Testing.
+  - Code then checks the result again: schema, scenarios that cover every formula sheet, claims to avoid, and every rework change id listed under `resolves`.
+  - Production rebuilds and every gate runs again. Failures retry within `MAX_JOB_ATTEMPTS`, then go to ERROR.
+  - The rework limit still pauses a product for you; `approve-rework <id>` grants more cycles.
+- **Red Team, headless** (`agents/red_team.run_headless`): the shift runs the same `.claude/commands/hive-review.md` instructions without a person, and Python validates and imports the verdict. A bad or missing verdict is retried a bounded number of times.
+- **Compliance** (`agents/compliance.py`, deterministic): forbidden claims send the product back to REWORK. A missing disclaimer or a brand name goes to HUMAN_REVIEW, because ambiguity is never guessed.
+- **Shift orchestrator** (`app/shift.py`, `python -m app.cli shift`):
+  - Before starting, it skips on battery, checks the shift window (`SHIFT_START`-`SHIFT_END`), the billing guard and the disk guard.
+  - Then it runs Research → Finance → Spec → Production → Testing → QA (with Visual QA) → Red Team → Rework → Compliance/SEO, repeating the build-to-review steps while products keep moving.
+  - It stops cleanly at the first hard limit. When the window ends, it finishes the step in progress, then stops. Jobs a killed shift left running are requeued at the next start, and the next shift resumes from the database.
+  - New products built per day: `MAX_PRODUCTS_BUILT_PER_DAY` (2). Publications stay at 0.
+- **Daily report** (`app/report.py`): `Hive Mint Daily Report.txt` on your Desktop, newest shift first, last 14 days. It covers:
+  - what each team did, ideas and scores, builds
+  - Testing, Visual QA, QA and Red Team results, reworks and spec diffs
+  - what waits for your approval, paused products (with the command to continue), errors
+  - disk usage and Claude runs used
+- **Scheduler**: `scripts\register_shift_task.ps1` registers a daily 1:00 PM Task Scheduler task with wake-to-run that stops after 9 hours (10:00 PM). `scripts\unregister_shift_task.ps1` removes it. Run the register script once from PowerShell:
+
+  ```powershell
+  powershell -NoProfile -ExecutionPolicy Bypass -File C:\Hive-Mint\scripts\register_shift_task.ps1
+  ```
+
 ## What it does not do yet
 
-No metered cloud AI, no builders beyond the sample product, no web research, no listing preview images, no marketplace or storefront connections, and no GUI. Research, Finance, Compliance and SEO are still stubs. Nothing can be published: the publication limit is 0 and release needs human approval.
+No metered cloud AI, no listing preview images, no marketplace or storefront connections, and no GUI. SEO is still a stub, and Production builds spreadsheet products only. Nothing can be published: the publication limit is 0 and release needs your approval.
 
 ## Layout
 
 | Folder | Contents |
 | --- | --- |
 | `app/` | Database, models, state machine, lifecycle, budget, API, CLI |
-| `agents/` | Operations Manager and departments (Production, Testing, QA, Red Team and rework routing are real; the rest are stubs) |
-| `providers/` | AI provider layer: local Ollama (Tier 1); metered APIs later, behind budget caps |
+| `agents/` | Operations Manager and departments (all real except SEO) |
+| `providers/` | AI provider layer: local Ollama (Tier 1), headless Claude Code on the Max plan (Tier 2); metered APIs later, behind budget caps |
+| `scripts/` | Task Scheduler register/unregister scripts and the shift runner |
 | `tools/` | Deterministic helpers: spec loader, product builders, xlsx styling, packaging, formula recalculation, rendering, chart checks |
-| `config/` | Settings, product specs (`config/specs/`), rework briefs (`config/rework/`), QA word list |
+| `config/` | Settings, seed niches, owner-written product specs (`config/specs/`), rework briefs (`config/rework/`), QA word list |
 | `tests/` | pytest suite |
 | `research/` | Research notes; `research/reviews/` holds Red Team packets and verdicts (gitignored) |
 | `data/`, `products/`, `logs/`, `archive/` | Local runtime output (gitignored) |
