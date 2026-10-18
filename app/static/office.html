@@ -469,6 +469,23 @@
       px(G[12], 5, up ? 3 : 11, 3, 2);
     }
   }
+  // An idle resident: paces a few steps by the door, stops to puff on a pipe. Purely ambient; it never
+  // changes with the data except that it steps aside (replaced by working keepers) while a job runs.
+  let idle = 0;
+  function idler(id, x, y) {
+    const o = ORDER.indexOf(id) * 5, t = (idle + o) % 24;
+    const pace = t < 6 ? t : t < 12 ? 12 - t : 0;            // walk out three steps, back, then rest
+    const resting = t >= 12;
+    keeper(x + Math.floor(pace / 2) * (o % 2 ? -1 : 1), y, false, 0, false);
+    if (resting) {
+      const X = x + 5, puff = (t - 12) % 4;
+      ctx.fillStyle = G[1]; ctx.fillRect(X, y + 4, 2, 1);      // pipe
+      ctx.fillStyle = G[10]; if (puff > 0) ctx.fillRect(X + 1, y + 3 - puff, 1, 1);
+      ctx.fillStyle = G[7]; if (puff > 1) ctx.fillRect(X + 2, y + 2 - puff, 1, 1);
+    }
+  }
+  if (!reduced) setInterval(() => { idle = (idle + 1) % 240; }, 650);
+
   function crate(x, y, tone) {
     const px = (c, X, Y, w = 1, h = 1) => { ctx.fillStyle = c; ctx.fillRect(X, Y, w, h); };
     px(G[0], x, y, 7, 7);
@@ -497,8 +514,11 @@
     moonlight();
     for (const b of byDepth) {
       const { x, y } = LAYOUT[b.id];
-      b.running.slice(0, 2).forEach((j, i) => keeper(x + 5 + i * 8, y - 13, true, frame, false));
-      b.queued.slice(0, 4).forEach((j, i) => keeper(x - 14 - i * 8, y - 13, false, frame, true));
+      // Every building keeps a resident keeper. Idle (pipe, slow pacing) unless the database says a job is
+      // RUNNING there; then the residents work. QUEUED jobs wait in line further along the wall.
+      if (b.running.length) b.running.slice(0, 2).forEach((j, i) => keeper(x + 5 + i * 8, y - 13, true, frame, false));
+      else idler(b.id, x + 6, y - 13);
+      b.queued.slice(0, 3).forEach((j, i) => keeper(x - 15 - i * 8, y - 13, false, frame, true));
       b.products.slice(0, 3).forEach((p, i) => {
         if (moving.some(m => m.id === p.id)) return;
         crate(x - 10 + i * 8, y + 2, CRATE[p.status] ?? 10);
@@ -617,7 +637,7 @@
     if (selected) showPanel(selected); else resetPanel();
   }
   function resetPanel() {
-    document.getElementById("panel").innerHTML = `<h2>The company</h2><p class="sub">Each ruin is a department. Crates are products; they travel the road as they pass each gate. A keeper appears only while a job is really running or waiting. The lighthouse lamp burns when something needs you.</p><p class="empty">Select a building to see what is there.</p>`;
+    document.getElementById("panel").innerHTML = `<h2>The company</h2><p class="sub">Each ruin is a department. Crates are products; they travel the road as they pass each gate. Every ruin has an idle keeper; he only picks up his mallet while a real job runs there, and waiting jobs queue at the door. The lighthouse lamp burns when something needs you.</p><p class="empty">Select a building to see what is there.</p>`;
   }
 
   const HINTS = {

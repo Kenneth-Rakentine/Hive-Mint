@@ -172,8 +172,8 @@ The demo writes the product to `products\<product id>\v1\`, including `Mobile_De
 
 - each department is a decaying castle ruin, set at different depths along a winding road in pipeline order and ending at The Lighthouse (HUMAN_REVIEW and READY_TO_PUBLISH), whose lamp burns only while something waits for you; a Storefront, an Infirmary (PAUSED, ERROR) and a Graveyard (REJECTED, RETIRED) sit off the road;
 - products are crates at the building matching their status, shaded by state (white = waiting for you, black = error); when a product changed gate since the last refresh, its crate travels to the new building;
-- workers are Scottish lighthouse keepers (flat caps, beards, scarves, long wool coats): one swings a mallet only while a job there is RUNNING, and QUEUED jobs wait in line at the door; a torn black banner marks held jobs or errors;
-- the sea, waves breaking on the rocks and the twinkling stars are short scenery loops that never change with the data;
+- workers are Scottish lighthouse keepers (flat caps, beards, scarves, long wool coats): every building has an idle resident who paces and smokes a pipe; he picks up a mallet only while a job there is RUNNING, and QUEUED jobs wait in line along the wall; a torn black banner marks held jobs or errors;
+- the idle residents, the sea, waves breaking on the rocks and the twinkling stars are short ambient loops that never change with the data;
 - the top bar shows revenue (gold; $0 until sales tracking exists), Claude runs today against the cap, products, how many wait for you, and disk space; the log at the bottom is the Event table;
 - click a building for its products (with the command to review or resume them) and its jobs.
 
