@@ -22,11 +22,17 @@ from agents.rework import active_brief, brief_payload
 from agents.testing import Testing
 from app.db import utcnow
 from app.clock import day_start
-from app.lifecycle import log_event, transition
-from app.models import AgentRun, Event, Job, Product
+from app.lifecycle import LimitReached, log_event, transition
+from app.models import AgentRun, Build, Event, Job, Product
 from app.states import OPEN_JOB_STATUSES, Department, JobStatus, ProductStatus
 from config.settings import Settings
+from providers.claude_headless import HeadlessRefused
 from tools.disk import check_disk
+
+# Raised by a handler when a hard limit or safety guard stops work (daily Claude run cap, billing
+# guard). Not a failure of the job: the attempt is given back, the job goes back to the queue and
+# the error propagates so the shift stops cleanly. The job runs again next shift.
+HARD_STOPS = (LimitReached, HeadlessRefused)
 
 S = ProductStatus
 D = Department
@@ -97,6 +103,15 @@ class OperationsManager:
             select(func.count(Job.id)).where(Job.department == D.PRODUCTION, Job.created_at >= day_start(self.settings.timezone))
         )
 
+    def has_build(self, product: Product) -> bool:
+        return self.session.scalar(select(func.count(Build.id)).where(Build.product_id == product.id)) > 0
+
+    def new_products_built_today(self) -> int:
+        """Production jobs queued today for a product's first build (rebuilds don't count)."""
+        jobs = self.session.scalars(select(Job.input_json).where(
+            Job.department == D.PRODUCTION, Job.created_at >= day_start(self.settings.timezone))).all()
+        return sum(1 for raw in jobs if json.loads(raw or "{}").get("first_build"))
+
     def next_job(self, product: Product) -> Job | None:
         """Queue the job for the product's current gate. Returns None if nothing was queued."""
         department = self.route(product)
@@ -108,10 +123,16 @@ class OperationsManager:
             open_job = None
         if department is None or open_job is not None:
             return None
+        first_build = department == D.PRODUCTION and not self.has_build(product)
         if department == D.PRODUCTION and self.builds_today() >= self.settings.max_builds_per_day:
             self._defer(product, f"Daily build limit reached ({self.settings.max_builds_per_day})")
             return None
+        if first_build and self.new_products_built_today() >= self.settings.max_products_built_per_day:
+            self._defer(product, f"Daily new-product build limit reached ({self.settings.max_products_built_per_day})")
+            return None
         job_input = {"product_id": product.id, "status": product.status.value}
+        if first_build:
+            job_input["first_build"] = True
         brief = active_brief(self.session, product) if department == D.PRODUCTION else None
         if brief is not None:
             job_input["rework_brief"] = brief_payload(brief)
@@ -173,6 +194,12 @@ class OperationsManager:
                 result = handler(product, job)
                 transition(self.session, self.settings, product, result.next_status,
                            actor=job.department.value.lower(), reason=result.summary, job=job, run=run)
+            except HARD_STOPS as error:
+                job.attempts -= 1
+                job.status, job.started_at = JobStatus.QUEUED, None
+                self._finish_run(run, clock, JobStatus.CANCELLED, error=f"{type(error).__name__}: {error}")
+                log_event(self.session, "job.requeued", actor=ACTOR, job=job, message=str(error))
+                raise
             except Exception as error:  # a failed attempt is recorded, then retried or escalated
                 self._finish_run(run, clock, JobStatus.FAILED, error=f"{type(error).__name__}: {error}")
                 continue
@@ -245,21 +272,27 @@ class OperationsManager:
                 job.status, job.error = JobStatus.QUEUED, None
                 log_event(self.session, "job.resumed", actor=ACTOR, job=job, message="Disk limits clear; requeued")
 
-    def tick(self) -> int:
+    def tick(self, departments: set[Department] | None = None) -> int:
         """Queue the next job for every routable product, then run queued jobs. Returns jobs run.
 
-        A job paused by a guard is not counted as run, so a tick loop stops while it waits.
+        departments limits the tick to those gates (the shift runs one gate at a time). A job
+        paused by a guard is not counted as run, so a tick loop stops while it waits. A hard stop
+        (HARD_STOPS) is committed, then re-raised to the caller.
         """
         self.resume_paused_jobs()
-        routable = [status for status, dept in ROUTING.items() if dept is not None]
+        routable = [status for status, dept in ROUTING.items()
+                    if dept is not None and (departments is None or dept in departments)]
         for product in self.session.scalars(select(Product).where(Product.status.in_(routable)).order_by(Product.id)):
             self.next_job(product)
         self.session.commit()
         ran = 0
-        for job in self.session.scalars(select(Job).where(Job.status == JobStatus.QUEUED).order_by(Job.id)).all():
-            if self.is_external(job):
-                continue  # waits for its session, e.g. python -m app.cli review-import
-            self.run_job(job)
-            self.session.commit()
-            ran += job.status != JobStatus.PAUSED
+        queued = select(Job).where(Job.status == JobStatus.QUEUED, Job.product_id.is_not(None)).order_by(Job.id)
+        for job in self.session.scalars(queued).all():
+            if self.is_external(job) or (departments is not None and job.department not in departments):
+                continue  # external jobs wait for their session, e.g. python -m app.cli review-import
+            try:
+                self.run_job(job)
+            finally:
+                self.session.commit()
+            ran += job.status not in (JobStatus.PAUSED, JobStatus.QUEUED)
         return ran

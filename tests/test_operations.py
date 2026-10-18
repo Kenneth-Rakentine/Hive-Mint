@@ -64,6 +64,9 @@ def test_human_review_gets_no_job(session, settings, make_product):
 
 
 def test_build_limit_defers_fourth_build(session, settings, make_product):
+    from dataclasses import replace
+
+    settings = replace(settings, max_products_built_per_day=10)  # only the total build limit applies here
     ops = OperationsManager(session, settings)
     products = [advance_to(session, settings, make_product(), S.PRODUCTION) for _ in range(4)]
     jobs = [ops.next_job(p) for p in products]
@@ -144,3 +147,87 @@ def test_tick_drives_idea_to_human_review_and_stops(session, settings, make_prod
     assert [j.for_status for j in jobs] == [S.IDEA, S.RESEARCH, S.FINANCE_REVIEW, S.SPECIFICATION, S.PRODUCTION,
                                             S.TESTING, S.QA, S.RED_TEAM, S.COMPLIANCE, S.SEO]
     assert all(j.status == JobStatus.SUCCEEDED for j in jobs)
+
+
+# --------------------------------------------------------------------------- v0.4: hard stops and limits
+
+def _flaky(failures, exc=RuntimeError("headless call failed")):
+    calls = {"n": 0}
+
+    def handler(product, job):
+        calls["n"] += 1
+        if calls["n"] <= failures:
+            raise exc
+        return StageResult(Outcome.PASS, S.SPECIFICATION, "ok")
+
+    handler.calls = calls
+    return handler
+
+
+def _ops_with(session, settings, department, handler):
+    return OperationsManager(session, settings, handlers={**STUB_HANDLERS, department: handler})
+
+
+def test_headless_failure_is_retried_within_the_bound_then_succeeds(session, settings, make_product):
+    handler = _flaky(2)
+    ops = _ops_with(session, settings, Department.FINANCE, handler)
+    product = advance_to(session, settings, make_product(), S.FINANCE_REVIEW)
+    job = ops.run_job(ops.next_job(product))
+    assert job.status == JobStatus.SUCCEEDED and job.attempts == 3 and product.status == S.SPECIFICATION
+    runs = session.scalars(select(AgentRun).where(AgentRun.job_id == job.id)).all()
+    assert [r.status for r in runs] == [JobStatus.FAILED, JobStatus.FAILED, JobStatus.SUCCEEDED]
+
+
+def test_headless_failure_beyond_the_bound_sends_the_product_to_error(session, settings, make_product):
+    handler = _flaky(99)
+    ops = _ops_with(session, settings, Department.FINANCE, handler)
+    product = advance_to(session, settings, make_product(), S.FINANCE_REVIEW)
+    job = ops.run_job(ops.next_job(product))
+    assert handler.calls["n"] == settings.max_job_attempts  # bounded: never retried forever
+    assert job.status == JobStatus.FAILED and product.status == S.ERROR
+
+
+@pytest.mark.parametrize("stop", ["limit", "refused"])
+def test_hard_stop_requeues_without_using_an_attempt(session, settings, make_product, stop):
+    from app.lifecycle import LimitReached
+    from providers.claude_headless import HeadlessRefused
+
+    exc = LimitReached("Daily Claude headless run limit reached") if stop == "limit" else HeadlessRefused("no")
+    ops = _ops_with(session, settings, Department.FINANCE, _flaky(1, exc))
+    product = advance_to(session, settings, make_product(), S.FINANCE_REVIEW)
+    job = ops.next_job(product)
+    with pytest.raises(type(exc)):
+        ops.run_job(job)
+    assert job.status == JobStatus.QUEUED and job.attempts == 0 and product.status == S.FINANCE_REVIEW
+    assert session.scalar(select(AgentRun).where(AgentRun.job_id == job.id)).status == JobStatus.CANCELLED
+    ops.run_job(job)  # next shift: the same job runs and succeeds
+    assert job.status == JobStatus.SUCCEEDED and job.attempts == 1
+
+
+def test_tick_can_be_limited_to_one_department(session, settings, make_product):
+    ops = OperationsManager(session, settings, handlers=STUB_HANDLERS)
+    idea = make_product()
+    finance = advance_to(session, settings, make_product(), S.FINANCE_REVIEW)
+    assert ops.tick(departments={Department.FINANCE}) == 1
+    assert finance.status == S.SPECIFICATION and idea.status == S.IDEA
+
+
+def test_new_product_build_limit_defers_first_builds_but_not_rebuilds(session, settings, make_product):
+    from dataclasses import replace
+
+    from app.models import Build
+
+    limited = replace(settings, max_products_built_per_day=1, max_builds_per_day=10)
+    ops = OperationsManager(session, limited, handlers=STUB_HANDLERS)
+    first, second, rebuilt = (advance_to(session, limited, make_product(), S.PRODUCTION) for _ in range(3))
+    old = Job(product_id=rebuilt.id, department=Department.PRODUCTION, job_type="build_product",
+              for_status=S.PRODUCTION, status=JobStatus.SUCCEEDED)
+    session.add(old)
+    session.flush()
+    session.add(Build(product_id=rebuilt.id, job_id=old.id, version=1, spec_slug="x", path="p", zip_path="z",
+                      zip_sha256="0" * 64))
+    session.flush()
+    assert ops.next_job(first) is not None
+    assert ops.next_job(second) is None  # deferred: one new product per day
+    assert ops.next_job(rebuilt) is not None  # a rebuild is not a new product
+    assert session.scalar(select(Event).where(Event.event_type == "job.deferred")).product_id == second.id
