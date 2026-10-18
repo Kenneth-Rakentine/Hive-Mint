@@ -9,8 +9,10 @@ scale, chart overlap, print area and screen width).
 Then the Tier 1 local model (Ollama) reads a compact text digest of the product, never raw
 files, and reports clarity problems. Visual QA renders each workbook the way a buyer sees it
 (tools/render.py: Excel, else LibreOffice, else a clear skip) and the same local model looks
-at every chart PNG against a checklist: overlapping text, clipped or duplicate labels,
-unreadable colors, anything broken.
+at every chart PNG. A 4B model judges poorly but transcribes well, so it reports what it
+sees (where the title sits, legend overlap, every axis label as printed, rotation, cut-off
+text, anything else broken) and code turns that into findings: e.g. a value repeated on the
+value axis is a duplicate-label defect, whatever the model thought of it.
 
 The model cannot fail a product on its own: its findings are capped at "major", and their
 deductions at QA_MODEL_MAX_DEDUCTION (text) and QA_VISION_MAX_DEDUCTION (charts), which
@@ -75,22 +77,24 @@ PRODUCT DIGEST
 """
 
 
-VISION_SYSTEM = ("You are the visual QA reviewer for spreadsheet templates sold to small-business owners. You look "
-                 "at one chart image exported from Excel and report only visible layout defects. Be strict about "
-                 "defects and do not invent problems; a clean chart gets no findings.")
-VISION_PROMPT = """This is the chart "{title}" on the {sheet} tab of a blank template: the buyer has not entered data
-yet, so empty bars and $0 values are expected and are NOT a problem.
+VISION_SYSTEM = ("You inspect one chart image exported from Excel, for a company that sells spreadsheet templates. "
+                 "Report exactly what you see. Do not guess and do not invent problems.")
+VISION_PROMPT = """This is the chart "{title}" on the {sheet} tab of a blank template: no data has been entered yet,
+so the bars are empty. Empty bars are expected. Everything else (title, legend, axis labels) must still look right.
 
-Check, and report only what you can actually see:
-1. overlapping_text: the title, legend or any labels drawn on top of the plot, gridlines or each other
-2. clipped_label: text cut off at an edge, or a label that is only partly visible
-3. duplicate_axis_labels: the same value repeated on an axis (for example $0 $0 $1 $1)
-4. unreadable: labels rotated, too small or too crowded to read, or colors with too little contrast
-5. broken: anything else that would look broken or unprofessional to a buyer
-
-Return JSON: looks_ok (true if none of these apply) and up to 5 findings, each with severity "minor" or
-"major", problem (one of the five names above, or "other"), issue (what and where), and suggestion.
+Fill in what you observe:
+- title_position: "above_plot" if the title sits in its own space above the plot area, "on_plot" if it is
+  drawn on top of the plot area, gridlines or axis lines, or "none" if there is no title
+- legend_overlaps: true if the legend touches or covers the plot, the gridlines or any axis label
+- value_axis_labels: every label on the value (numbers/$) axis, in order, exactly as printed, repeats included
+- category_axis_labels: every label on the category axis, in order, exactly as printed
+- labels_rotated: true if any axis label is tilted or vertical instead of horizontal
+- text_cut_off: true if any text is cut off at an edge or only partly visible
+- unreadable_colors: true if any text or bar color has too little contrast to read
+- other_problems: anything else that looks broken or unprofessional (up to 3), or an empty list
 """
+# The model often "reports" the empty template itself; that is expected, not a defect.
+_EMPTY_TEMPLATE_NOTE = re.compile(r"\b(no data|blank template|empty (bars|chart|template)|expected)\b", re.I)
 
 
 @dataclass
@@ -115,16 +119,50 @@ class ModelReview(BaseModel):
     findings: list[ModelFinding] = Field(default_factory=list, max_length=8)
 
 
-class VisionFinding(BaseModel):
+class OtherProblem(BaseModel):
     severity: Literal["minor", "major"]
-    problem: Literal["overlapping_text", "clipped_label", "duplicate_axis_labels", "unreadable", "broken", "other"]
     issue: str
-    suggestion: str = ""
 
 
-class VisionReview(BaseModel):
-    looks_ok: bool
-    findings: list[VisionFinding] = Field(default_factory=list, max_length=5)
+class ChartObservation(BaseModel):
+    """What the model sees in one chart image. Code, not the model, decides what is a defect."""
+
+    title_position: Literal["above_plot", "on_plot", "none"]
+    legend_overlaps: bool
+    value_axis_labels: list[str] = Field(default_factory=list, max_length=40)
+    category_axis_labels: list[str] = Field(default_factory=list, max_length=40)
+    labels_rotated: bool
+    text_cut_off: bool
+    unreadable_colors: bool = False
+    other_problems: list[OtherProblem] = Field(default_factory=list, max_length=3)
+
+
+def judge_observation(seen: ChartObservation) -> list[tuple[str, str, str, str]]:
+    """(severity, problem, issue, suggestion) for each defect the observation shows."""
+    out = []
+    if seen.title_position == "on_plot":
+        out.append(("major", "overlapping_text", "The title is drawn on top of the plot area",
+                    "Turn the title overlay off so the plot starts below it"))
+    if seen.legend_overlaps:
+        out.append(("major", "overlapping_text", "The legend overlaps the plot or the axis labels",
+                    "Move the legend to the top and turn its overlay off"))
+    for axis, labels in (("value", seen.value_axis_labels), ("category", seen.category_axis_labels)):
+        shown = [label.strip() for label in labels if label.strip()]
+        repeated = sorted({label for label in shown if shown.count(label) > 1})
+        if repeated:
+            out.append(("major", "duplicate_axis_labels",
+                        f"The {axis} axis repeats labels ({', '.join(repeated[:4])}): read as {' '.join(shown[:12])}",
+                        "Fix the axis scale and number format so every label is different"))
+    if seen.labels_rotated:
+        out.append(("minor", "unreadable", "Axis labels are rotated", "Use short labels and a fixed 0 rotation"))
+    if seen.text_cut_off:
+        out.append(("major", "clipped_label", "Text is cut off at an edge", "Give the labels room or shorten them"))
+    if seen.unreadable_colors:
+        out.append(("minor", "unreadable", "Some text or bar colors have too little contrast",
+                    "Use darker text and distinct series colors"))
+    out += [(p.severity, "other", p.issue, "") for p in seen.other_problems
+            if not _EMPTY_TEMPLATE_NOTE.search(p.issue)]
+    return out
 
 
 # --------------------------------------------------------------------------- deterministic checks
@@ -392,8 +430,8 @@ class QA:
         for chart in render.charts:
             prompt = VISION_PROMPT.format(title=chart.title, sheet=chart.sheet)
             completion = provider.generate(job, Department.QA, prompt, system=VISION_SYSTEM,
-                                           response_model=VisionReview, images=[Path(chart.png).read_bytes()])
+                                           response_model=ChartObservation, images=[Path(chart.png).read_bytes()])
             where = f"{chart.sheet}: chart {chart.index} '{chart.title}' ({Path(chart.png).name})"
-            findings += [Finding("vision", "chart_visual", f.severity, where, f"[{f.problem}] {f.issue}", f.suggestion)
-                         for f in completion.data.findings]
+            findings += [Finding("vision", "chart_visual", severity, where, f"[{problem}] {issue}", suggestion)
+                         for severity, problem, issue, suggestion in judge_observation(completion.data)]
         return findings

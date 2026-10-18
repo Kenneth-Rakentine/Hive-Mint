@@ -18,12 +18,14 @@ from tools.render import choose_engine, render_workbooks
 WORKBOOK = "Mobile_Detailer_Business_Tracker.xlsx"
 
 
-def test_none_skips_with_a_clear_warning_and_a_manifest(tmp_path):
+def test_none_skips_with_a_clear_warning_and_clears_stale_renders(tmp_path):
     out = tmp_path / "renders"
+    out.mkdir()
+    (out / "old-chart.png").write_bytes(b"stale")
     result = render_workbooks([tmp_path / "book.xlsx"], out, preference="none")
     assert result.skipped and result.charts == [] and result.sheet_pdfs == []
     assert "Visual render skipped: rendering is turned off" in result.warnings[0]
-    assert json.loads((out / "manifest.json").read_text())["engine"] is None
+    assert not out.exists()  # nothing written, and no stale images left for the Red Team packet
 
 
 def test_no_excel_and_no_libreoffice_skips_instead_of_failing(tmp_path, monkeypatch):
@@ -55,6 +57,7 @@ def test_libreoffice_fallback_writes_one_pdf_and_says_there_are_no_chart_pngs(tm
     assert [Path(p).name for p in result.sheet_pdfs] == ["book--all-sheets.pdf"]
     assert "--headless" in calls[0] and "pdf" in calls[0]
     assert any("no chart PNGs" in w for w in result.warnings)
+    assert json.loads((tmp_path / "renders" / "manifest.json").read_text())["engine"] == "libreoffice"
 
 
 def test_a_failed_libreoffice_run_is_a_warning_not_a_crash(tmp_path, monkeypatch):

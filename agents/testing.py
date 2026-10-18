@@ -28,6 +28,7 @@ from app.states import Outcome, ProductStatus
 from config.settings import Settings
 from tools.packaging import sha256
 from tools.recalc import RecalcError, Values, choose_engine, recalculate
+from tools.render import RENDERS_DIR
 from tools.spec import excel_serial, excel_value, file_names, load_spec, sheet_spec
 
 S = ProductStatus
@@ -116,6 +117,7 @@ def check_files(spec: dict, build_dir: Path) -> list[Check]:
         checks.append(Check("file_exists", name, ok, "" if ok else "missing or empty"))
     expected = set(file_names(spec)) | {spec["zip_name"]}
     present = {p.name for p in build_dir.iterdir()} if build_dir.is_dir() else set()
+    present.discard(RENDERS_DIR)  # QA's rendered views of the build, never part of the download
     extra = sorted(present - expected)
     checks.append(Check("build_folder_clean", build_dir.name, not extra,
                         f"unexpected files: {', '.join(extra)}" if extra else ""))

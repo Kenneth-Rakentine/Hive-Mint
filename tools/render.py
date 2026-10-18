@@ -7,9 +7,10 @@ Engines, in "auto" order:
   always quit in a finally block. If it lingers after Quit, that one process is terminated.
 - **libreoffice**: soffice headless converts each workbook to one PDF. It cannot export
   single charts, so there are no PNGs and the vision pass is skipped (with a warning).
-- **none**: nothing is rendered; the result carries a clear warning.
+- **none**: nothing is rendered or written; the result carries a clear warning.
 
-Output goes to <build>/renders/ with a manifest.json listing what was produced.
+Output goes to <build>/renders/ with a manifest.json listing what was produced. Earlier
+renders there are removed first, so the folder always matches the latest run.
 """
 
 from __future__ import annotations
@@ -101,10 +102,11 @@ def render_workbooks(workbooks: list[Path], out_dir: Path, *, preference: str = 
     engine, soffice, reason = choose_engine(preference, soffice_path)
     if out_dir.exists():
         shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
     result = RenderResult(engine=engine, out_dir=str(out_dir))
     if engine is None:
         result.warnings.append(f"Visual render skipped: {reason}.")
+        return result
+    out_dir.mkdir(parents=True)
     for workbook in workbooks:
         try:
             if engine == "excel":

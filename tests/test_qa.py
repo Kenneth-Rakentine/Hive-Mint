@@ -10,8 +10,8 @@ from sqlalchemy import select
 from agents.departments import STUB_HANDLERS
 from agents.operations import OperationsManager
 from agents.qa import (
-    QA, Finding, check_docs_mention_files, check_features, check_naming, check_spelling, deterministic_checks,
-    score_report,
+    QA, ChartObservation, Finding, check_docs_mention_files, check_features, check_naming, check_spelling,
+    deterministic_checks, judge_observation, score_report,
 )
 from app.lifecycle import resume
 from app.models import AgentRun, Review, ReworkBrief
@@ -170,10 +170,23 @@ def test_ollama_down_gives_bounded_retries_then_error(session, settings, product
 
 # --------------------------------------------------------------------------- visual QA
 
-VISION_BAD = {"looks_ok": False, "findings": [
-    {"severity": "major", "problem": "overlapping_text", "issue": "Title sits on the gridlines",
-     "suggestion": "Move it"},
-    {"severity": "major", "problem": "duplicate_axis_labels", "issue": "$0 $0 $1 $1 on the axis"}]}
+# What qwen3.5:4b actually reported for the v2 Income vs Costs chart (rotated month names, $0 $0 ... $1),
+# plus a title on the plot and the usual remark about the empty template.
+VISION_BAD = {"title_position": "on_plot", "legend_overlaps": False,
+              "value_axis_labels": ["$0", "$0", "$0", "$0", "$0", "$1", "$1"],
+              "category_axis_labels": ["January", "February", "March"], "labels_rotated": True, "text_cut_off": False,
+              "other_problems": [{"severity": "minor", "issue": "No data bars are present; expected for a template."}]}
+VISION_CLEAN = {"title_position": "above_plot", "legend_overlaps": False, "value_axis_labels": ["$0", "$1,000"],
+                "category_axis_labels": ["Jan", "Feb", "Mar"], "labels_rotated": False, "text_cut_off": False,
+                "other_problems": []}
+
+
+def test_code_judges_what_the_model_saw():
+    findings = judge_observation(ChartObservation.model_validate(VISION_BAD))
+    assert [(s, p) for s, p, _, _ in findings] == [
+        ("major", "overlapping_text"), ("major", "duplicate_axis_labels"), ("minor", "unreadable")]
+    assert "repeats labels ($0, $1)" in findings[1][2]
+    assert judge_observation(ChartObservation.model_validate(VISION_CLEAN)) == []  # empty-template remark dropped
 
 
 def _fake_renderer(engine="excel"):
@@ -217,14 +230,14 @@ def test_vision_pass_sends_every_chart_image_and_is_capped(session, settings, pr
     images = [m for m in seen if m.get("images")]
     assert len(images) == 3 and all(len(m["images"]) == 1 for m in images)
     assert '"Costs by Category" on the Dashboard tab of a blank template' in images[2]["content"]
-    assert "NOT a problem" in images[0]["content"]  # empty charts are expected in a template
+    assert "Empty bars are expected" in images[0]["content"]
 
     review = session.scalar(select(Review))
     report = json.loads(review.report_json)
     vision = [f for f in report["findings"] if f["source"] == "vision"]
-    assert len(vision) == 6 and vision[0]["issue"] == "[overlapping_text] Title sits on the gridlines"
+    assert len(vision) == 9 and vision[0]["issue"] == "[overlapping_text] The title is drawn on top of the plot area"
     assert "chart1.png" in vision[0]["where"]
-    # 6 major vision findings = 90 points, capped at 10; text 1 minor = 5: still a PASS, the model can't fail it.
+    # 6 major + 3 minor vision findings = 105 points, capped at 10; text 1 minor = 5: still a PASS.
     assert (report["vision_deduction"], report["model_deduction"], report["score"]) == (10, 5, 85)
     assert product_at_qa.status == S.RED_TEAM and "3 chart(s) rendered by excel" in review.summary
     assert report["render"]["engine"] == "excel" and len(report["render"]["charts"]) == 3
@@ -234,8 +247,8 @@ def test_vision_pass_sends_every_chart_image_and_is_capped(session, settings, pr
 
 
 def test_skipped_render_is_reported_and_skips_the_vision_pass(session, settings, product_at_qa, sample_spec,
-                                                               good_build):
-    record_build(session, product_at_qa, good_build, sample_spec)
+                                                               build_copy):
+    record_build(session, product_at_qa, build_copy, sample_spec)
     calls = []
 
     def handler(request):
