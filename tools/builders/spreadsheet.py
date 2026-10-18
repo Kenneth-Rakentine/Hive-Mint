@@ -5,7 +5,7 @@ Workbook sheets, in spec order, each with a "kind":
 - how_to: title, intro, steps[], notes[] (a short first sheet for the buyer).
 - table: a data-entry table. columns[] of {name, width, format, formula, validation}; rows; optional
   prefill (rows typed in, or {"param", "fields"} copying a parameter list). Header in row 1, formulas
-  pre-filled for every data row, frozen header and a filter.
+  pre-filled for every data row, frozen header and a filter; prints landscape, one page wide.
 - layout: free-form cells. items[] of
     {"type": "text", "cell", "text", "style": title|subtitle|label|wrap|plain}
     {"type": "value", "cell", "label"?, "label_cell"?, "value" | "formula", "format", "input", "validation", "style"}
@@ -262,6 +262,12 @@ def _table(ws, sheet: dict, layout: Layout) -> None:
     ws.row_dimensions[1].height = 30
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:{get_column_letter(len(columns))}{last_row}"
+    # Print every column on one page width, header repeated: a printout (and the Visual QA render the
+    # listing pictures come from) shows whole rows, not just the first few columns.
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_title_rows = "1:1"
     for offset, values in enumerate(_prefill_rows(sheet, layout.spec)):
         for name, value in values.items():
             col = column_index_from_string(letters[name])

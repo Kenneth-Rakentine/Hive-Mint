@@ -298,6 +298,35 @@ def check_docs_mention_files(spec: dict, doc_texts: dict[str, str]) -> list[Find
     return findings
 
 
+# Columns an example may leave empty: free-text notes nobody needs to see filled in.
+_OPTIONAL_EXAMPLE_COLUMN = re.compile(r"\bnotes?\b|\bcomments?\b", re.I)
+
+
+def check_example_fill(spec: dict) -> list[Finding]:
+    """A filled-in example fills every entry column of each table it uses. A blank Vendor or Vehicle
+    column reads as a broken product, in the workbook and in the listing pictures made from it."""
+    findings = []
+    files = {f["name"]: f for f in spec["files"]}
+    for example in (f for f in spec["files"] if f.get("example_of")):
+        base = files.get(example["example_of"], {})
+        filled: dict[str, set[str]] = {}
+        for ref in example.get("example_data", []):
+            if "column" in ref and ref.get("value") not in (None, ""):
+                filled.setdefault(ref["sheet"], set()).add(ref["column"])
+        for sheet in base.get("sheets", []):
+            if sheet.get("kind") != "table" or sheet["name"] not in filled:
+                continue
+            columns = sheet.get("column_defs") or sheet.get("columns") or []
+            empty = [c["name"] for c in columns if not c.get("formula") and c["name"] not in filled[sheet["name"]]
+                     and not _OPTIONAL_EXAMPLE_COLUMN.search(c["name"])]
+            if empty:
+                findings.append(Finding(
+                    "deterministic", "example_fill", "major", f"{example['name']}:{sheet['name']}",
+                    f"The example leaves {', '.join(empty)} empty on every row of {sheet['name']}",
+                    f"Give the example rows realistic made-up values for {', '.join(empty)}"))
+    return findings
+
+
 def deterministic_checks(spec: dict, build_dir: Path, extra_words: set[str] | None = None) -> list[Finding]:
     extra_words = allowlist() if extra_words is None else extra_words
     texts: dict[str, str] = {}
@@ -330,6 +359,7 @@ def deterministic_checks(spec: dict, build_dir: Path, extra_words: set[str] | No
     findings += check_naming(sheet_names, headers)
     findings += check_features(spec, build_dir)
     findings += check_docs_mention_files(spec, doc_texts)
+    findings += check_example_fill(spec)
     return findings
 
 

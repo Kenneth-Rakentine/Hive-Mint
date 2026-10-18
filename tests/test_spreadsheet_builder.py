@@ -47,3 +47,10 @@ def test_example_workbook_is_the_template_with_data_typed_in(tmp_path, sample_sp
     template = load_workbook(written[0])
     assert template["Jobs"]["F2"].value is None
     assert next(f for f in spec["files"] if f["name"] == "Example.xlsx")["sheets"]  # normalize expanded it
+
+
+def test_tables_print_one_page_wide_with_the_header_repeated(good_build):
+    ws = load_workbook(good_build / "Mobile_Detailer_Business_Tracker.xlsx")["Jobs"]
+    assert ws.page_setup.orientation == "landscape" and ws.sheet_properties.pageSetUpPr.fitToPage
+    assert (ws.page_setup.fitToWidth, ws.page_setup.fitToHeight) == (1, 0)
+    assert ws.print_title_rows == "$1:$1"

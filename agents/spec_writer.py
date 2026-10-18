@@ -85,7 +85,8 @@ RESEARCH (niche: {niche}, confidence {confidence}):
 
 Design a spreadsheet product a small-business buyer can use without help: a template workbook (role "template")
 with clear input tables, a Dashboard of key figures and 2-3 charts, monthly or category summaries where useful,
-a How to Use sheet and a Lists sheet; an example workbook ("example_of" the template) with realistic sample data;
+a How to Use sheet and a Lists sheet; an example workbook ("example_of" the template) with realistic made-up sample data in every entry column
+of each table it uses (QA flags an entry column left empty on every row; Notes columns may stay empty);
 an Instructions.pdf; and a README.txt. Address the buyer complaints and gaps above. Set "slug" to "{slug}",
 "name" to the product name, "spec_version" to 1, and "zip_name" to a short file name ending in .zip.
 

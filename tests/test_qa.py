@@ -286,3 +286,14 @@ def test_ollama_down_during_the_vision_pass_retries_then_errors(session, setting
 def test_qa_without_a_build_goes_to_rework(session, settings, product_at_qa):
     result = QA(replace(settings), ollama_down())(product_at_qa, None)
     assert result.next_status == S.REWORK and "no build" in result.summary
+
+
+def test_an_example_must_fill_every_entry_column_it_uses(sample_spec):
+    from agents.qa import check_example_fill
+    spec = json.loads(json.dumps(sample_spec))
+    base = spec["files"][0]["name"]
+    rows = [{"sheet": "Jobs", "row": 1, "column": c, "value": 1} for c in ("Date", "Customer Name", "Service")]
+    spec["files"].insert(1, {"name": "Example.xlsx", "kind": "xlsx", "example_of": base, "example_data": rows})
+    findings = check_example_fill(spec)
+    assert len(findings) == 1 and findings[0].severity == "major"
+    assert "Vehicle" in findings[0].issue and "Notes" not in findings[0].issue and "Total" not in findings[0].issue
