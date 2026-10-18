@@ -103,6 +103,11 @@ def _check_guards(session: Session, settings: Settings, product: Product, target
         raise LimitReached(f"Daily publication limit reached ({settings.max_publications_per_day})")
 
 
+def rework_limit(settings: Settings, product: Product) -> int:
+    """MAX_REWORK_CYCLES plus any extra cycles the owner granted (python -m app.cli approve-rework)."""
+    return settings.max_rework_cycles + (product.extra_rework_cycles or 0)
+
+
 def transition(
     session: Session,
     settings: Settings,
@@ -122,16 +127,19 @@ def transition(
     _check_guards(session, settings, product, target)
 
     requested = target
+    held_at = current
     if target == S.REWORK and current not in HOLD:  # resuming a held rework is not a new cycle
         product.rework_count += 1
         product.approved_by = product.approved_at = None
-        if product.rework_count > settings.max_rework_cycles:
-            target = S.PAUSED
-            reason = f"Rework limit reached ({settings.max_rework_cycles}); human decision needed. Last failure: {reason}"
+        limit = rework_limit(settings, product)
+        if product.rework_count > limit:
+            target, held_at = S.PAUSED, S.REWORK  # held at the rework it was refused; resume enters it
+            reason = (f"Rework limit reached ({limit}); human decision needed: python -m app.cli approve-rework "
+                      f"{product.id}. Last failure: {reason}")
 
     if target in HOLD:
         if current in ACTIVE:
-            product.paused_from = current
+            product.paused_from = held_at
     elif current in HOLD:
         product.paused_from = None
 
@@ -151,6 +159,22 @@ def resume(session: Session, settings: Settings, product: Product, *, actor: str
         raise TransitionBlocked(f"Only a PAUSED or ERROR product can be resumed (status is {product.status})")
     return transition(session, settings, product, product.paused_from, actor=actor,
                       reason=reason or f"Resumed from {product.status} by {actor}")
+
+
+def approve_rework(session: Session, settings: Settings, product: Product, *, cycles: int, actor: str) -> Product:
+    """The owner grants extra rework cycles. A product paused by the rework limit resumes into REWORK."""
+    if cycles < 1:
+        raise ValueError("Grant at least one cycle")
+    if product.status in (S.REJECTED, S.RETIRED, S.PUBLISHED):
+        raise TransitionBlocked(f"A {product.status} product cannot be reworked")
+    product.extra_rework_cycles = (product.extra_rework_cycles or 0) + cycles
+    log_event(session, "rework.approved", actor=actor, product=product,
+              message=f"{actor} granted {cycles} extra rework cycle(s); limit now {rework_limit(settings, product)}",
+              data={"cycles": cycles, "extra_rework_cycles": product.extra_rework_cycles,
+                    "rework_count": product.rework_count})
+    if product.status == S.PAUSED and product.paused_from == S.REWORK:
+        resume(session, settings, product, actor=actor, reason=f"Extra rework cycle(s) approved by {actor}")
+    return product
 
 
 def record_approval(session: Session, product: Product, *, approver: str, note: str = "") -> Product:

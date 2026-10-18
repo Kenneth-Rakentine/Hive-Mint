@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import lru_cache
@@ -17,6 +18,14 @@ DEFAULT_DB_URL = f"sqlite:///{(ROOT / 'data' / 'hivemint.db').as_posix()}"
 RECALC_ENGINES = ("auto", "libreoffice", "formulas")
 RENDER_ENGINES = ("auto", "excel", "libreoffice", "none")
 DEFAULT_OLLAMA_MODELS_DIR = Path.home() / ".ollama" / "models"
+# Finance: the weighted opportunity formula. Each factor is scored 1-5 (competition and support burden
+# are "lower is better" and inverted); the weighted total is scaled to 0-100.
+OPPORTUNITY_FACTORS = ("demand", "competition", "margin", "ease", "differentiation", "support_burden",
+                       "automation_suitability")
+INVERTED_FACTORS = frozenset({"competition", "support_burden"})
+DEFAULT_OPPORTUNITY_WEIGHTS = (("demand", 0.25), ("competition", 0.15), ("margin", 0.15), ("ease", 0.10),
+                               ("differentiation", 0.15), ("support_burden", 0.10), ("automation_suitability", 0.10))
+_HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 def usd_to_micros(amount: str | Decimal) -> int:
@@ -36,6 +45,26 @@ def _float(name: str, default: float) -> float:
     if value < 0:
         raise ValueError(f"{name} must not be negative")
     return value
+
+
+def _bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    if value.strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    if value.strip().lower() in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(f"{name} must be true or false")
+
+
+def _weights(name: str) -> tuple[tuple[str, float], ...]:
+    """OPPORTUNITY_WEIGHTS=demand=0.25,competition=0.15,... (every factor once, summing to 1)."""
+    value = os.getenv(name)
+    if not value:
+        return DEFAULT_OPPORTUNITY_WEIGHTS
+    pairs = [part.split("=", 1) for part in value.split(",") if part.strip()]
+    return tuple((k.strip(), float(v)) for k, v in pairs)
 
 
 def _micros(name: str, default: str) -> int:
@@ -81,6 +110,19 @@ class Settings:
     # Testing recalculates workbooks with LibreOffice if found ("auto"), else the formulas package.
     recalc_engine: str = "auto"
     soffice_path: str | None = None
+    # Autopilot (python -m app.cli shift). Headless Claude Code runs use the Max subscription; their reported
+    # cost is logged only, so the hard cap is the number of runs per local day.
+    max_claude_runs_per_day: int = 15
+    # Distinct products that may get their first build per day; rework rebuilds count toward max_builds_per_day.
+    max_products_built_per_day: int = 2
+    shift_start: str = "13:00"  # local time in `timezone`
+    shift_end: str = "22:00"
+    skip_on_battery: bool = True
+    claude_bin: str = "claude"
+    claude_timeout_s: float = 1200.0
+    opportunity_weights: tuple[tuple[str, float], ...] = DEFAULT_OPPORTUNITY_WEIGHTS
+    opportunity_threshold: float = 65.0
+    max_opportunities_per_shift: int = 3
 
     def __post_init__(self) -> None:
         ZoneInfo(self.timezone)  # fail fast on an unknown timezone
@@ -91,6 +133,16 @@ class Settings:
         if self.qa_model_max_deduction + self.qa_vision_max_deduction > 100 - self.qa_pass_score:
             raise ValueError("QA_MODEL_MAX_DEDUCTION + QA_VISION_MAX_DEDUCTION must not exceed 100 - QA_PASS_SCORE, "
                              "or the local model alone could fail a product")
+        for name, value in (("SHIFT_START", self.shift_start), ("SHIFT_END", self.shift_end)):
+            if not _HHMM.match(value):
+                raise ValueError(f"{name} must be HH:MM (24-hour), got {value!r}")
+        weights = dict(self.opportunity_weights)
+        if set(weights) != set(OPPORTUNITY_FACTORS) or len(weights) != len(self.opportunity_weights):
+            raise ValueError(f"OPPORTUNITY_WEIGHTS must name each factor once: {', '.join(OPPORTUNITY_FACTORS)}")
+        if any(w < 0 for w in weights.values()) or abs(sum(weights.values()) - 1) > 1e-6:
+            raise ValueError("OPPORTUNITY_WEIGHTS must be non-negative and sum to 1")
+        if not 0 <= self.opportunity_threshold <= 100:
+            raise ValueError("OPPORTUNITY_THRESHOLD must be between 0 and 100")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -121,6 +173,16 @@ class Settings:
             archive_dir=Path(os.getenv("HIVEMINT_ARCHIVE_DIR", ROOT / "archive")),
             recalc_engine=os.getenv("HIVEMINT_RECALC_ENGINE", "auto"),
             soffice_path=os.getenv("HIVEMINT_SOFFICE") or None,
+            max_claude_runs_per_day=_int("MAX_CLAUDE_RUNS_PER_DAY", 15),
+            max_products_built_per_day=_int("MAX_PRODUCTS_BUILT_PER_DAY", 2),
+            shift_start=os.getenv("SHIFT_START", "13:00"),
+            shift_end=os.getenv("SHIFT_END", "22:00"),
+            skip_on_battery=_bool("SKIP_ON_BATTERY", True),
+            claude_bin=os.getenv("CLAUDE_BIN", "claude"),
+            claude_timeout_s=_float("CLAUDE_TIMEOUT_S", 1200.0),
+            opportunity_weights=_weights("OPPORTUNITY_WEIGHTS"),
+            opportunity_threshold=_float("OPPORTUNITY_THRESHOLD", 65.0),
+            max_opportunities_per_shift=_int("MAX_OPPORTUNITIES_PER_SHIFT", 3),
         )
 
     def limits(self) -> dict[str, object]:
@@ -133,6 +195,10 @@ class Settings:
             "max_publications_per_day": self.max_publications_per_day,
             "max_job_attempts": self.max_job_attempts,
             "max_rework_cycles": self.max_rework_cycles,
+            "max_claude_runs_per_day": self.max_claude_runs_per_day,
+            "max_products_built_per_day": self.max_products_built_per_day,
+            "shift_window": f"{self.shift_start}-{self.shift_end}",
+            "skip_on_battery": self.skip_on_battery,
             "min_free_disk_gb": self.min_free_disk_gb,
             "max_hivemint_storage_gb": self.max_hivemint_storage_gb,
             "limits_reset": f"local midnight ({self.timezone})",

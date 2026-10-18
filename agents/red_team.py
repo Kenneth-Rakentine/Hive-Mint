@@ -1,7 +1,9 @@
-"""Red Team department: argues against publishing. Tier 2/3, done in a human-triggered
-Claude Code session ($0), never an automatic cloud call.
+"""Red Team department: argues against publishing. Tier 2, done by Claude Code on the Max
+subscription: either a session the owner starts (/hive-review <id>) or, during a shift, a
+headless run (run_headless) that follows the same instructions file,
+.claude/commands/hive-review.md.
 
-Operations queues a RED_TEAM job and leaves it waiting. The session (/hive-review <id>):
+Operations queues a RED_TEAM job and leaves it waiting. The review:
 1. `python -m app.cli review-export <id>` writes research/reviews/<id>/packet.md: spec,
    product digest, test results, QA report, rework history, and the rendered views (chart
    PNGs and sheet PDFs from Visual QA) for the reviewer to look at.
@@ -26,11 +28,11 @@ from agents.rework import RequiredChange, create_brief
 from app.db import utcnow
 from app.lifecycle import log_event
 from app.models import Build, Job, Product, Review, ReworkBrief, TestResult
-from app.states import OPEN_JOB_STATUSES, Department, Outcome, ProductStatus
+from app.states import OPEN_JOB_STATUSES, Department, JobStatus, Outcome, ProductStatus
 from config.settings import ROOT, Settings
 from tools.digest import product_digest
 from tools.render import RENDERS_DIR
-from tools.spec import load_spec
+from tools.spec_store import product_spec
 
 S = ProductStatus
 REVIEWS_DIR = ROOT / "research" / "reviews"
@@ -153,7 +155,7 @@ def _spec_for_packet(spec: dict) -> dict:
 # --------------------------------------------------------------------------- export
 
 def export_packet(session: Session, product: Product, base: Path = REVIEWS_DIR) -> Path:
-    spec = load_spec(product.slug)
+    spec = product_spec(session, product)
     if spec is None:
         raise VerdictError(f"No specification for '{product.slug}'")
     build = latest_build(session, product)
@@ -312,3 +314,77 @@ def import_verdict(session: Session, settings: Settings, product: Product, verdi
         if source.resolve() != kept.resolve():
             shutil.copyfile(source, kept)
     return review
+
+
+# --------------------------------------------------------------------------- headless (shift)
+
+COMMAND_FILE = ROOT / ".claude" / "commands" / "hive-review.md"
+HEADLESS_PREFACE = """You are running headless inside a Hive-Mint shift; no person is watching, so never ask a
+question. Hive-Mint has already run step 1's review-export for you: the packet is at {packet}. You cannot run
+commands. In step 4, write the verdict JSON to {verdict} and stop: Hive-Mint validates and imports it (do not run
+review-import). Finish with a short plain-text summary of your decision.
+{problems}
+The /hive-review instructions follow.
+
+"""
+
+
+def run_headless(session: Session, settings: Settings, product: Product, *, provider=None,
+                 base: Path = REVIEWS_DIR) -> Review:
+    """Review a product at RED_TEAM with headless Claude Code, using the /hive-review instructions.
+
+    Bounded: up to the job's max_attempts runs; a run that fails or writes no valid verdict counts
+    as a failed attempt (its problems are passed to the next one). Out of attempts, the job fails
+    and the product goes to ERROR. Hard stops (run cap, billing guard) propagate untouched.
+    """
+    from agents.operations import HARD_STOPS, OperationsManager
+    from app.lifecycle import transition
+    from providers import headless_policy
+    from providers.base import ProviderError
+    from providers.claude_headless import ClaudeHeadless
+
+    if product.status != S.RED_TEAM:
+        raise VerdictError(f"Product {product.id} is {product.status}, not awaiting Red Team")
+    ops = OperationsManager(session, settings)
+    job = open_red_team_job(session, product) or ops.next_job(product)
+    if job is None:
+        raise VerdictError(f"Could not queue a Red Team job for product {product.id}")
+    provider = provider or ClaudeHeadless(settings, session)
+    instructions = COMMAND_FILE.read_text(encoding="utf-8").split("---", 2)[-1].replace("$ARGUMENTS", str(product.id))
+    verdict_path = review_dir(product, base) / "verdict.json"
+    problems = ""
+    while job.attempts < job.max_attempts:
+        job.attempts += 1
+        packet = export_packet(session, product, base)
+        verdict_path.unlink(missing_ok=True)
+        prompt = HEADLESS_PREFACE.format(packet=_repo_rel(packet), verdict=_repo_rel(verdict_path),
+                                         problems=problems) + instructions
+        try:
+            provider.run(job, Department.RED_TEAM, prompt, headless_policy.RED_TEAM)
+            verdict = load_verdict(verdict_path)
+            job.attempts -= 1  # complete_external_job counts the attempt that produced the verdict
+            try:
+                return import_verdict(session, settings, product, verdict, source=verdict_path, base=base)
+            except VerdictError:
+                job.attempts += 1
+                raise
+        except HARD_STOPS:
+            job.attempts -= 1  # not this job's failure: the shift stops and the job waits for the next one
+            raise
+        except (ProviderError, VerdictError) as error:
+            problems = f"\nThe previous attempt failed: {error}\nFix that this time.\n"
+            log_event(session, "red_team.attempt_failed", actor="red_team", product=product, job=job,
+                      message=str(error), data={"attempt": job.attempts})
+            session.flush()
+    job.status, job.finished_at = JobStatus.FAILED, utcnow()
+    job.error = f"Failed after {job.attempts} attempt(s); last error: {problems.strip()}"
+    log_event(session, "job.failed", actor="red_team", job=job, message=job.error)
+    transition(session, settings, product, S.ERROR, actor="operations", reason=job.error, job=job)
+    return None
+
+
+def _repo_rel(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()

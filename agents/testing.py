@@ -1,10 +1,10 @@
 """Testing department: "does it function?" Deterministic checks only, no AI.
 
-Every check is driven by the product spec (config/specs/<slug>.json): which files must
-exist, which sheets and columns each workbook needs, which scenarios to recalculate and
-what the answers must be. Results are stored as TestResult rows linked to the product,
-job, agent run and build. Any failure sends the product to REWORK with the reasons; a
-clean run moves it to QA.
+Every check is driven by the product spec: which files must exist, which sheets and columns
+each workbook needs, which scenarios to recalculate and what the answers must be (a value, or
+nonzero, blank or nonblank). Example workbooks are checked as built, with their data in.
+Results are stored as TestResult rows linked to the product, job, agent run and build. Any
+failure sends the product to REWORK with the reasons; a clean run moves it to QA.
 """
 
 from __future__ import annotations
@@ -29,7 +29,9 @@ from config.settings import Settings
 from tools.packaging import sha256
 from tools.recalc import RecalcError, Values, choose_engine, recalculate
 from tools.render import RENDERS_DIR
-from tools.spec import excel_serial, excel_value, file_names, load_spec, sheet_spec
+from tools.cells import describe, headers as _headers, locate
+from tools.spec import excel_serial, excel_value, file_names
+from tools.spec_store import product_spec
 
 S = ProductStatus
 TOLERANCE = 0.005  # half a cent
@@ -60,7 +62,7 @@ class Testing:
 
     def __call__(self, product: Product, job: Job) -> StageResult:
         session = object_session(product)
-        spec = load_spec(product.slug)
+        spec = product_spec(session, product, self.settings.products_dir)
         if spec is None:
             return StageResult(Outcome.FAIL, S.REWORK, f"Testing: no specification for '{product.slug}'")
         build = session.scalar(select(Build).where(Build.product_id == product.id)
@@ -191,7 +193,8 @@ def check_workbook(spec: dict, file_spec: dict, rules: dict, path: Path, *, engi
         template = _recalc(path, engine, workdir / "template", soffice)
         if isinstance(template, Check):
             return checks + [template]
-        checks.append(_error_scan(template, forbidden, f"{name}: empty template"))
+        as_built = "example as built" if file_spec.get("example_of") else "empty template"
+        checks.append(_error_scan(template, forbidden, f"{name}: {as_built}"))
         for index, scenario in enumerate(file_spec.get("scenarios", [])):
             target = f"{name}: {scenario['name']}"
             if not scenario.get("inputs"):
@@ -231,11 +234,6 @@ def _check_table(ws, sheet: dict, target: str) -> list[Check]:
         checks.append(Check("data_validation", target, not unvalidated,
                             f"no validation on: {', '.join(unvalidated)}" if unvalidated else ""))
     return checks
-
-
-def _headers(ws, header_row: int) -> dict[str, str]:
-    """Header text -> column letter."""
-    return {str(c.value).strip(): c.column_letter for c in ws[header_row] if c.value is not None}
 
 
 def _frozen_rows(ws) -> int:
@@ -387,37 +385,12 @@ def _error_scan(values: Values, forbidden: set[str], target: str) -> Check:
     return Check("no_error_values", target, not errors, detail)
 
 
-def _resolve(wb, file_spec: dict, ref: dict) -> str:
-    """Spec reference -> cell coordinate. Raises LookupError with a readable reason."""
-    ws = wb[ref["sheet"]]
-    if "label" in ref:
-        for row in ws.iter_rows():
-            for cell in row:
-                if isinstance(cell.value, str) and cell.value.strip() == ref["label"]:
-                    col = cell.column + ref.get("offset", 1)
-                    return f"{get_column_letter(col)}{cell.row + ref.get('row_offset', 0)}"
-        raise LookupError(f"label '{ref['label']}' not found on {ref['sheet']}")
-    sheet = sheet_spec(file_spec, ref["sheet"])
-    header_row = sheet.get("header_row", 1)
-    headers = _headers(ws, header_row)
-    if ref["column"] not in headers:
-        raise LookupError(f"column '{ref['column']}' not found on {ref['sheet']}")
-    return f"{headers[ref['column']]}{header_row + ref['row']}"
-
-
-def _describe(ref: dict) -> str:
-    if "label" in ref:
-        offsets = "".join(f" {k}={ref[k]}" for k in ("row_offset", "offset") if k in ref)
-        return f"{ref['sheet']} '{ref['label']}'{offsets}"
-    return f"{ref['sheet']} row {ref['row']} '{ref['column']}'"
-
-
 def _write_inputs(path: Path, file_spec: dict, inputs: list[dict], out: Path) -> str | None:
     """Copy the workbook with scenario inputs typed in. Returns a problem description or None."""
     wb = load_workbook(path)
     try:
         for ref in inputs:
-            wb[ref["sheet"]][_resolve(wb, file_spec, ref)] = excel_value(ref["value"])
+            wb[ref["sheet"]][locate(wb, file_spec, ref)] = excel_value(ref["value"])
     except LookupError as error:
         return f"cannot place input: {error}"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -429,17 +402,34 @@ def _check_expectations(wb, file_spec: dict, scenario: dict, values: Values, tar
     misses = []
     for ref in scenario.get("expect", []):
         try:
-            cell = _resolve(wb, file_spec, ref)
+            cell = locate(wb, file_spec, ref)
         except LookupError as error:
             misses.append(str(error))
             continue
         actual = values.get((ref["sheet"].upper(), cell))
+        op = ref.get("op", "eq")
+        if op != "eq":
+            if not OPS[op](actual):
+                misses.append(f"{describe(ref)} ({ref['sheet']}!{cell}) expected {op}, got {actual!r}")
+            continue
         expected = excel_value(ref["value"])
         if hasattr(expected, "isoformat"):
             expected = excel_serial(expected)
         if not _matches(actual, expected):
-            misses.append(f"{_describe(ref)} ({ref['sheet']}!{cell}) expected {expected!r}, got {actual!r}")
+            misses.append(f"{describe(ref)} ({ref['sheet']}!{cell}) expected {expected!r}, got {actual!r}")
     return Check("scenario", target, not misses, "; ".join(misses))
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+# Expectation operators besides equality ("value"): for example workbooks and warning cells.
+OPS = {
+    "nonzero": lambda v: _is_number(v) and abs(v) > TOLERANCE,
+    "blank": lambda v: v in ("", None),
+    "nonblank": lambda v: v not in ("", None),
+}
 
 
 def _matches(actual, expected) -> bool:

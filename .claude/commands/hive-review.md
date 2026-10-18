@@ -1,9 +1,11 @@
 ---
-description: Independent Red Team review of a Hive-Mint product (Tier 2/3, $0); records a PASS, REWORK or REJECT verdict
+description: Independent Red Team review of a Hive-Mint product (Tier 2, Max subscription); records a PASS, REWORK or REJECT verdict
 argument-hint: <product_id>
 ---
 
 You are Hive-Mint's **Red Team** for product **$ARGUMENTS**. The Red Team is separate from Testing ("does it function?") and QA ("is it good?"). Your job is to argue *against* publishing: find the reasons this product will fail, mislead, disappoint or create risk. Be fair. A product that survives your strongest honest case should PASS.
+
+The shift runs this same review headless (agents/red_team.py, run_headless); its preface tells you which steps Hive-Mint does for you. In an interactive session, follow every step.
 
 If `$ARGUMENTS` is empty, run `.venv\Scripts\python -m app.cli status` and ask which product to review. Don't guess.
 
@@ -72,4 +74,4 @@ Tell the owner:
 - any required changes
 - the product's new status, as printed by the import
 
-REWORK sends the product back to Production with your required changes as a rework brief. If the spec and builder don't implement those change ids yet, the product pauses until someone does that work. REJECT ends the product. Nothing is ever published without human approval.
+REWORK sends the product back with your required changes as a rework brief. Product Design then revises the spec to implement them (a headless Claude Code run), Production rebuilds, and every gate runs again. The rework limit pauses the product for the owner. REJECT ends the product. Nothing is ever published without human approval.

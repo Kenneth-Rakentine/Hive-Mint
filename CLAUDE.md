@@ -45,15 +45,24 @@ Side states: `REWORK`, `REJECTED`, `PAUSED`, `RETIRED`, `ERROR`.
 | Tier | Provider | Notes |
 | --- | --- | --- |
 | 1 | Ollama, local | Free; the default for routine drafting. |
-| 2/3 | Human-triggered Claude Code sessions | For now. No automatic cloud calls. |
+| 2/3 | Claude Code on the owner's Max subscription | Human-triggered sessions, or headless `claude -p` runs during a shift (`providers/claude_headless.py`). |
 | later | Metered API | Only behind a provider layer (`providers/`) with hard budget caps. |
+
+Headless Claude Code runs (owner-approved in v0.4):
+
+- **Billing guard.** Every run is refused unless `ANTHROPIC_API_KEY` and the other pay-per-use variables are unset and `claude auth status` shows a claude.ai login with the Max plan. Nothing may bill per token.
+- **Run cap.** Capped by `MAX_CLAUDE_RUNS_PER_DAY`. Their reported cost is logged but not counted against the cloud caps.
+- **Tool policy.** Runs stay inside the repo under `providers/headless_policy.py`: `--restricted`, no MCP servers, `dontAsk`, explicit per-role tools. No git, installs, deletes or paths outside the repo.
+- **Desktop files.** Headless runs never touch the Desktop report files; plain Python writes them.
 
 ## Default limits (`config/settings.py`, overridable in `.env`)
 
 - Cloud spend: **$1/day**, **$20/month**
 - **20** ideas/day
-- **3** builds/day
+- **3** builds/day, of which at most **2** are first builds of new products
+- **15** headless Claude Code runs/day
 - **0** publications/day
+- The shift runs only from **13:00 to 22:00** local time and never on battery.
 - Daily and monthly limits reset at local midnight, America/New_York (`HIVEMINT_TIMEZONE`). Timestamps are stored in UTC.
 
 ## Safety
@@ -65,7 +74,7 @@ Side states: `REWORK`, `REJECTED`, `PAUSED`, `RETIRED`, `ERROR`.
 
 ## Storage & cleanup tracking
 
-Whenever you install, download, create, cache or change anything outside the repo (or anything large inside it), update the cleanup report in the same session. Never leave it stale.
+Whenever you install, download, create, cache or change anything outside the repo (or anything large inside it), including scheduled tasks, update the cleanup report in the same session. Never leave it stale.
 
 - The report is the plain text file `Hive Mint Storage for Cleanup.txt` on the owner's Desktop. Find the real path with `[Environment]::GetFolderPath('Desktop')`, since it may be redirected to OneDrive.
 - Check the machine before you edit the report; don't rely on memory. Record each item's exact path, current size, how it got there and the exact removal steps, then update "Last updated" and the size totals.

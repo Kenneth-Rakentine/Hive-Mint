@@ -46,7 +46,7 @@ from providers.ollama import OllamaProvider
 from tools.chart_checks import chart_checks
 from tools.digest import pdf_text, product_digest, workbook_text
 from tools.render import RENDERS_DIR, RenderResult, render_workbooks
-from tools.spec import load_spec
+from tools.spec_store import product_spec
 
 S = ProductStatus
 SEVERITY_POINTS = {"critical": 40, "major": 15, "minor": 5, "info": 0}
@@ -79,8 +79,7 @@ PRODUCT DIGEST
 
 VISION_SYSTEM = ("You inspect one chart image exported from Excel, for a company that sells spreadsheet templates. "
                  "Report exactly what you see. Do not guess and do not invent problems.")
-VISION_PROMPT = """This is the chart "{title}" on the {sheet} tab of a blank template: no data has been entered yet,
-so the bars are empty. Empty bars are expected. Everything else (title, legend, axis labels) must still look right.
+VISION_PROMPT = """This is the chart "{title}" on the {sheet} tab of {state}
 
 Fill in what you observe:
 - title_position: "above_plot" if the title sits in its own space above the plot area, "on_plot" if it is
@@ -93,6 +92,13 @@ Fill in what you observe:
 - unreadable_colors: true if any text or bar color has too little contrast to read
 - other_problems: anything else that looks broken or unprofessional (up to 3), or an empty list
 """
+# What the chart should look like, by the workbook's role in the spec ("template" unless it is an example).
+VISION_STATES = {
+    "template": "a blank template: no data has been entered yet,\nso the bars are empty. Empty bars are expected. "
+                "Everything else (title, legend, axis labels) must still look right.",
+    "example": "a filled-in example workbook: sample data has been\nentered, so the bars should show values. "
+               "Report empty bars under other_problems. Title, legend and axis labels must look right.",
+}
 # The model often "reports" the empty template itself; that is expected, not a defect.
 _EMPTY_TEMPLATE_NOTE = re.compile(r"\b(no data|blank template|empty (bars|chart|template)|expected)\b", re.I)
 
@@ -137,8 +143,9 @@ class ChartObservation(BaseModel):
     other_problems: list[OtherProblem] = Field(default_factory=list, max_length=3)
 
 
-def judge_observation(seen: ChartObservation) -> list[tuple[str, str, str, str]]:
-    """(severity, problem, issue, suggestion) for each defect the observation shows."""
+def judge_observation(seen: ChartObservation, *, template: bool = True) -> list[tuple[str, str, str, str]]:
+    """(severity, problem, issue, suggestion) for each defect the observation shows. On a blank template,
+    remarks about missing data are expected and dropped; on an example workbook they are defects."""
     out = []
     if seen.title_position == "on_plot":
         out.append(("major", "overlapping_text", "The title is drawn on top of the plot area",
@@ -161,7 +168,7 @@ def judge_observation(seen: ChartObservation) -> list[tuple[str, str, str, str]]
         out.append(("minor", "unreadable", "Some text or bar colors have too little contrast",
                     "Use darker text and distinct series colors"))
     out += [(p.severity, "other", p.issue, "") for p in seen.other_problems
-            if not _EMPTY_TEMPLATE_NOTE.search(p.issue)]
+            if not (template and _EMPTY_TEMPLATE_NOTE.search(p.issue))]
     return out
 
 
@@ -369,7 +376,7 @@ class QA:
 
     def __call__(self, product: Product, job: Job) -> StageResult:
         session = object_session(product)
-        spec = load_spec(product.slug)
+        spec = product_spec(session, product, self.settings.products_dir)
         if spec is None:
             return StageResult(Outcome.FAIL, S.REWORK, f"QA: no specification for '{product.slug}'")
         build = session.scalar(select(Build).where(Build.product_id == product.id)
@@ -389,7 +396,7 @@ class QA:
         render = self.renderer([build_dir / f["name"] for f in spec["files"] if f["kind"] == "xlsx"],
                                build_dir / RENDERS_DIR)
         findings += [Finding("render", "render", "info", "visual render", warning) for warning in render.warnings]
-        findings += self._vision_pass(provider, job, render)
+        findings += self._vision_pass(provider, job, render, spec)
 
         report = score_report(findings, pass_score=self.settings.qa_pass_score,
                               model_cap=self.settings.qa_model_max_deduction,
@@ -424,14 +431,18 @@ class QA:
         top = "; ".join(f"[{f.severity}] {f.issue}" for f in blocking[:3])
         return StageResult(Outcome.FAIL, S.REWORK, f"{summary}. {top}".strip(), data | {"rework_brief_id": brief.id})
 
-    def _vision_pass(self, provider: OllamaProvider, job: Job, render: RenderResult) -> list[Finding]:
+    def _vision_pass(self, provider: OllamaProvider, job: Job, render: RenderResult, spec: dict) -> list[Finding]:
         """One local-model call per chart image. Ollama down raises, and the job retries like the text pass."""
         findings = []
+        roles = {f["name"]: "example" if f.get("example_of") else f.get("role", "template") for f in spec["files"]}
         for chart in render.charts:
-            prompt = VISION_PROMPT.format(title=chart.title, sheet=chart.sheet)
+            role = roles.get(chart.workbook, "template")
+            state = VISION_STATES.get(role, VISION_STATES["template"])
+            prompt = VISION_PROMPT.format(title=chart.title, sheet=chart.sheet, state=state)
             completion = provider.generate(job, Department.QA, prompt, system=VISION_SYSTEM,
                                            response_model=ChartObservation, images=[Path(chart.png).read_bytes()])
             where = f"{chart.sheet}: chart {chart.index} '{chart.title}' ({Path(chart.png).name})"
             findings += [Finding("vision", "chart_visual", severity, where, f"[{problem}] {issue}", suggestion)
-                         for severity, problem, issue, suggestion in judge_observation(completion.data)]
+                         for severity, problem, issue, suggestion in judge_observation(
+                             completion.data, template=role != "example")]
         return findings

@@ -1,4 +1,5 @@
-"""Command line: python -m app.cli {init-db,demo,run,status,rework,resume,review-export,review-import}"""
+"""Command line: python -m app.cli {init-db,demo,run,status,rework,resume,approve-rework,review-export,
+review-import,research,spec-check,shift,report}"""
 
 from __future__ import annotations
 
@@ -202,6 +203,120 @@ def cmd_review_import(args) -> int:
         return 0
 
 
+def cmd_research(args) -> int:
+    """Research one niche with headless Claude Code (web search, public pages only)."""
+    from agents.research import ResearchFailed, run_niche_research
+    from app.lifecycle import LimitReached
+    from app.models import Opportunity
+    from providers.claude_headless import HeadlessRefused
+
+    settings = get_settings()
+    with _session() as session:
+        try:
+            record = run_niche_research(session, settings, args.niche)
+        except (ResearchFailed, LimitReached, HeadlessRefused) as error:
+            session.commit()  # the job, its runs and events are the record of what happened
+            console.print(f"[red]{escape(str(error))}[/red]")
+            return 2
+        session.commit()
+        console.print(f"Research record #{record.id}: [bold]{record.confidence}[/bold] confidence, "
+                      f"{len(json.loads(record.sources_json))} sources")
+        console.print(escape(record.summary))
+        for opp in session.scalars(select(Opportunity).where(Opportunity.research_id == record.id)):
+            console.print(escape(f"  opportunity #{opp.id}: {opp.title} ({opp.product_type})"))
+        console.print("Finance scores pending opportunities in the next shift.")
+        return 0
+
+
+def cmd_approve_rework(args) -> int:
+    """The owner grants extra rework cycles; a product paused by the rework limit resumes into REWORK."""
+    from app.lifecycle import approve_rework, rework_limit
+
+    settings = get_settings()
+    with _session() as session:
+        product = _product(session, args.product_id)
+        if product is None:
+            return 2
+        try:
+            approve_rework(session, settings, product, cycles=args.cycles, actor=args.actor)
+        except (IllegalTransition, ValueError) as error:
+            console.print(f"[red]{escape(str(error))}[/red]")
+            return 2
+        session.commit()
+        console.print(f"Product {product.id}: {args.cycles} extra rework cycle(s) granted (limit now "
+                      f"{rework_limit(settings, product)}, used {product.rework_count}). Status: "
+                      f"[bold]{product.status}[/bold]. The next shift continues the rework.")
+        return 0
+
+
+def cmd_spec_check(args) -> int:
+    """Validate a spec file, build it into a temporary folder and run every Testing check on it."""
+    import tempfile
+
+    from agents.spec_writer import spec_problems
+    from agents.testing import run_checks
+    from tools.builders import BUILDERS
+    from tools.packaging import make_zip
+    from tools.recalc import choose_engine
+    from tools.spec import SpecError, prepare
+
+    try:
+        spec = json.loads(Path(args.path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        console.print(f"SPEC FAILED: cannot read {escape(args.path)}: {escape(str(error))}")
+        return 1
+    if problems := spec_problems(spec):
+        console.print("SPEC FAILED:\n" + "\n".join(f"- {escape(p)}" for p in problems))
+        return 1
+    settings = get_settings()
+    spec = prepare(spec)
+    with tempfile.TemporaryDirectory(prefix="hivemint-speccheck-") as tmp:
+        out = Path(tmp) / "build"
+        try:
+            written = BUILDERS[spec["builder"]](spec, out)
+            make_zip(out / spec["zip_name"], written)
+        except (SpecError, KeyError, ValueError) as error:
+            console.print(f"SPEC FAILED: the builder cannot build it: {escape(str(error))}")
+            return 1
+        engine, soffice = choose_engine(settings.recalc_engine, settings.soffice_path)
+        checks = run_checks(spec, out, engine=engine, soffice=soffice)
+    failed = [c for c in checks if not c.passed]
+    if failed:
+        console.print(f"SPEC FAILED: {len(failed)} of {len(checks)} Testing checks failed:\n"
+                      + "\n".join(f"- {escape(c.reason())}" for c in failed))
+        return 1
+    console.print(f"SPEC OK: built and passed all {len(checks)} Testing checks")
+    return 0
+
+
+def cmd_shift(args) -> int:
+    """One unattended shift: Research -> Finance -> Spec -> Production -> Testing -> QA -> Red Team -> Rework."""
+    from app.report import write_report
+    from app.shift import ShiftRunner
+
+    settings = get_settings()
+    with _session() as session:
+        shift = ShiftRunner(session, settings, ignore_window=args.ignore_window).run()
+        console.print(f"Shift #{shift.id}: {escape(shift.stop_reason)}")
+        for step in json.loads(shift.steps_json):
+            console.print(escape(f"  {step['step']:<11} {step['summary']}"))
+        console.print(f"Claude headless runs this shift: {shift.claude_runs}")
+        try:
+            path = write_report(session, settings)
+            console.print(f"Daily report: {escape(str(path))}")
+        except OSError as error:
+            console.print(f"[red]Could not write the daily report: {escape(str(error))}[/red]")
+        return 0
+
+
+def cmd_report(_args) -> int:
+    from app.report import write_report
+
+    with _session() as session:
+        console.print(f"Daily report: {escape(str(write_report(session, get_settings())))}")
+    return 0
+
+
 def red_team_dir() -> Path:
     return red_team.REVIEWS_DIR
 
@@ -274,6 +389,21 @@ def main(argv: list[str] | None = None) -> int:
     import_cmd.add_argument("product_id", type=int)
     import_cmd.add_argument("verdict")
     import_cmd.set_defaults(func=cmd_review_import)
+    approve = commands.add_parser("approve-rework", help="grant a product extra rework cycles (resumes it if paused)")
+    approve.add_argument("product_id", type=int)
+    approve.add_argument("--cycles", type=int, default=1)
+    approve.add_argument("--actor", default="owner")
+    approve.set_defaults(func=cmd_approve_rework)
+    check = commands.add_parser("spec-check", help="validate, build and test a spec file (no database changes)")
+    check.add_argument("path")
+    check.set_defaults(func=cmd_spec_check)
+    shift = commands.add_parser("shift", help="run one unattended shift, then write the daily report")
+    shift.add_argument("--ignore-window", action="store_true", help="run outside SHIFT_START-SHIFT_END (manual runs)")
+    shift.set_defaults(func=cmd_shift)
+    commands.add_parser("report", help="rewrite the daily report on the Desktop").set_defaults(func=cmd_report)
+    research = commands.add_parser("research", help="research a niche with headless Claude Code (web search)")
+    research.add_argument("--niche", required=True)
+    research.set_defaults(func=cmd_research)
     args = parser.parse_args(argv)
     return args.func(args)
 

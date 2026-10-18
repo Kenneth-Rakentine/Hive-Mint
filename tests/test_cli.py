@@ -87,3 +87,71 @@ def test_rework_command_seeds_a_brief_and_resume_returns_a_held_product(cli_env,
 
     assert cli.main(["resume", str(product.id)]) == 2  # not held
     assert cli.main(["resume", "999"]) == 2
+
+
+def test_research_command_records_a_niche(cli_env, fake_claude, capsys):
+    from app.models import Opportunity, ResearchRecord
+    from tests.test_research import research_answer
+
+    engine, _ = cli_env
+    fake_claude.replies = [{"structured_output": research_answer()}]
+    assert cli.main(["research", "--niche", "small motels"]) == 0
+    with make_session_factory(engine)() as session:
+        assert session.scalar(select(ResearchRecord)).niche == "small motels"
+        assert session.scalar(select(Opportunity)).title == "Motel Night Audit Workbook"
+    assert "high" in capsys.readouterr().out
+
+
+def test_research_command_reports_a_refusal(cli_env, fake_claude, monkeypatch, capsys):
+    engine, _ = cli_env
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    assert cli.main(["research", "--niche", "x"]) == 2
+    assert "HEADLESS_REFUSED" in capsys.readouterr().out
+    assert not fake_claude.calls
+
+
+def test_approve_rework_command_grants_cycles(cli_env, settings):
+    from app.lifecycle import transition
+
+    from app.db import init_db
+
+    engine, _ = cli_env
+    init_db(engine)
+    with make_session_factory(engine)() as session:
+        product = create_product(session, settings, slug="p1", name="P1", product_type="spreadsheet")
+        advance_to(session, settings, product, ProductStatus.QA)
+        transition(session, settings, product, ProductStatus.REWORK, actor="qa", reason="fail")
+        session.commit()
+        pid = product.id
+    assert cli.main(["approve-rework", str(pid), "--cycles", "2"]) == 0
+    assert _product(engine, "p1").extra_rework_cycles == 2
+    assert cli.main(["approve-rework", "999"]) == 2
+
+
+def test_spec_check_reports_ok_and_problems(cli_env, tmp_path, capsys, monkeypatch):
+    from agents import testing
+    from tools.spec import SPEC_DIR
+
+    monkeypatch.setattr(testing, "run_checks", lambda spec, out, **kw: [testing.Check("file_exists", "x", True)])
+    good = SPEC_DIR / f"{cli.DEMO['slug']}.json"
+    assert cli.main(["spec-check", str(good)]) == 0
+    assert "SPEC OK" in capsys.readouterr().out
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps(dict(json.loads(good.read_text(encoding="utf-8")), claims_not_to_make=[])))
+    assert cli.main(["spec-check", str(bad)]) == 1
+    assert "claims_not_to_make is empty" in capsys.readouterr().out
+    monkeypatch.setattr(testing, "run_checks",
+                        lambda spec, out, **kw: [testing.Check("scenario", "Dashboard", False, "expected 700")])
+    assert cli.main(["spec-check", str(good)]) == 1
+    assert "expected 700" in capsys.readouterr().out
+
+
+def test_shift_command_runs_and_writes_the_report(cli_env, monkeypatch, tmp_path, capsys):
+    from app import report, shift
+
+    monkeypatch.setattr(report, "report_path", lambda: tmp_path / "Hive Mint Daily Report.txt")
+    monkeypatch.setattr(shift, "on_battery", lambda: True)
+    assert cli.main(["shift"]) == 0
+    out = capsys.readouterr().out
+    assert "skipped: on battery" in out
+    assert "skipped: on battery" in (tmp_path / "Hive Mint Daily Report.txt").read_text(encoding="utf-8")

@@ -60,7 +60,9 @@ def make_session_factory(engine: Engine) -> sessionmaker[Session]:
 
 def init_db(engine: Engine) -> None:
     from app import models  # noqa: F401  (register tables)
+    from app.migrate import migrate
 
+    migrate(engine)  # existing databases first, so create_all only adds what is missing
     Base.metadata.create_all(engine)
 
 

@@ -85,9 +85,9 @@ def test_spec_includes_the_milestone_scenarios(sample_spec):
     assert ("Tax Set-Aside", 0) in expectations  # nothing set aside on a loss
 
 
-def test_spec_v3_is_one_workbook_that_resolves_both_rework_briefs(sample_spec):
-    assert sample_spec["spec_version"] == 3
-    assert [f["name"] for f in sample_spec["files"] if f["kind"] == "xlsx"] == [WORKBOOK]
+def test_spec_is_one_generic_workbook_that_resolves_both_rework_briefs(sample_spec):
+    assert sample_spec["spec_version"] >= 4 and sample_spec["builder"] == "spreadsheet"
+    assert [f["name"] for f in sample_spec["files"] if f["kind"] == "xlsx"][0] == WORKBOOK
     assert set(sample_spec["resolves"]) == {"merge_workbooks", "dashboard_charts", "profit_after_mileage",
                                             "tax_set_aside", "chart_titles_clear", "chart_month_labels",
                                             "chart_axis_scale", "chart_layout_fits"}
@@ -328,3 +328,31 @@ def test_testing_without_a_build_fails_to_rework(session, settings, sample_produ
     ops = _testing_ops(session, settings)
     ops.run_job(ops.next_job(sample_product))
     assert sample_product.status == S.REWORK and "no build" in sample_product.status_reason
+
+
+# --------------------------------------------------------------------------- expectation operators
+
+@pytest.mark.parametrize("op,actual,ok", [
+    ("nonzero", 12.5, True), ("nonzero", 0, False), ("nonzero", "", False), ("nonzero", -3, True),
+    ("blank", "", True), ("blank", None, True), ("blank", 0, False), ("blank", "Check fuel", False),
+    ("nonblank", "Check fuel", True), ("nonblank", "", False), ("nonblank", 0, True),
+])
+def test_expectation_operators(op, actual, ok):
+    from agents.testing import OPS
+
+    assert OPS[op](actual) is ok
+
+
+def test_operator_expectations_are_checked(sample_spec, good_build):
+    from openpyxl import load_workbook
+
+    from agents.testing import _check_expectations
+
+    wb = load_workbook(good_build / WORKBOOK)
+    file_spec = sample_spec["files"][0]
+    values = {("DASHBOARD", "B11"): 0, ("DASHBOARD", "B13"): 250.0}
+    scenario = {"name": "ops", "expect": [{"sheet": "Dashboard", "label": "Total Income", "op": "nonzero"},
+                                          {"sheet": "Dashboard", "label": "Net Profit", "op": "nonzero"}]}
+    check = _check_expectations(wb, file_spec, scenario, values, "t")
+    assert not check.passed and "Total Income" in check.detail and "expected nonzero" in check.detail
+    assert "Net Profit" not in check.detail
