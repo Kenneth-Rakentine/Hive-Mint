@@ -38,7 +38,6 @@ text is escaped and **bold** becomes bold. Text: lines[] (joined with CRLF unles
 from __future__ import annotations
 
 import re
-from datetime import date
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -448,8 +447,3 @@ def write_text(file_spec: dict, path: Path) -> None:
     if file_spec.get("newline", "crlf") == "crlf":
         text = text.replace("\n", "\r\n")
     path.write_text(text, encoding="utf-8", newline="")
-
-
-def us_date(iso: str) -> str:
-    d = date.fromisoformat(iso)
-    return f"{d.strftime('%B')} {d.day}, {d.year}"

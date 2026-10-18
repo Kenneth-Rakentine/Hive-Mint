@@ -9,11 +9,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from tools.builders import mobile_detailer, spreadsheet
+from tools.builders import spreadsheet
 
 Builder = Callable[[dict, Path], list[Path]]
 
 BUILDERS: dict[str, Builder] = {
     "spreadsheet": spreadsheet.build,
-    "mobile_detailer_tracker": mobile_detailer.build,  # legacy; replaced by spec v4 + "spreadsheet"
 }

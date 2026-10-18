@@ -1,74 +1,22 @@
-"""The general spreadsheet builder: spec v4 of the detailer tracker rebuilds the legacy workbook exactly."""
+"""The general spreadsheet builder (layout, tokens, charts and example workbooks come from the spec)."""
 
 import json
-import re
-import zipfile
-from pathlib import Path
 
 import pytest
 from openpyxl import load_workbook
-from openpyxl.utils.cell import range_boundaries
-from pypdf import PdfReader
 
-from tools.builders import mobile_detailer, spreadsheet
+from tools.builders import spreadsheet
 from tools.spec import SpecError, prepare
 
-V3 = Path(__file__).parent / "fixtures" / "detailer_spec_v3.json"
 
-
-def _unquote(value):
-    """'Jobs'!A1 and Jobs!A1 are the same reference."""
-    return re.sub(r"'([A-Za-z_][A-Za-z0-9_]*)'!", lambda m: m.group(1) + "!", value) if isinstance(value, str) else value
-
-
-def _cell(c):
-    color = str(c.font.color.rgb) if c.font and c.font.color else None
-    return (_unquote(c.value), c.number_format, bool(c.font and c.font.b), color,
-            c.fill.fgColor.rgb if c.fill and c.fill.fill_type else None, c.alignment.wrap_text, c.alignment.horizontal)
-
-
-def _validations(ws):
-    cells = set()
-    for dv in ws.data_validations.dataValidation:
-        for rng in str(dv.sqref).split():
-            c1, r1, c2, r2 = range_boundaries(rng)
-            cells |= {(dv.type, dv.operator, _unquote(dv.formula1), dv.formula2, c, r)
-                      for c in range(c1, c2 + 1) for r in range(r1, r2 + 1)}
-    return cells
-
-
-@pytest.fixture(scope="module")
-def both(tmp_path_factory, sample_spec):
-    out = tmp_path_factory.mktemp("parity")
-    legacy = mobile_detailer.build(prepare(json.loads(V3.read_text(encoding="utf-8"))), out / "legacy")
-    generic = spreadsheet.build(sample_spec, out / "generic")
-    return legacy, generic
-
-
-def test_generic_workbook_matches_the_legacy_builder(both):
-    (a, *_), (b, *_) = both
-    wa, wb = load_workbook(a), load_workbook(b)
-    assert wa.sheetnames == wb.sheetnames
-    for name in wa.sheetnames:
-        x, y = wa[name], wb[name]
-        coords = {c.coordinate for ws in (x, y) for row in ws.iter_rows() for c in row if c.value is not None or c.has_style}
-        assert [k for k in sorted(coords) if _cell(x[k]) != _cell(y[k])] == [], name
-        assert _validations(x) == _validations(y), name
-        assert {k: v.width for k, v in x.column_dimensions.items()} == {k: v.width for k, v in y.column_dimensions.items()}
-        assert (x.freeze_panes, x.print_area, x.auto_filter.ref, x.sheet_view.showGridLines,
-                x.page_setup.orientation) == (y.freeze_panes, y.print_area, y.auto_filter.ref,
-                                              y.sheet_view.showGridLines, y.page_setup.orientation), name
-        assert set(map(str, x.merged_cells.ranges)) == set(map(str, y.merged_cells.ranges))
-
-
-def test_generic_charts_pdf_and_readme_match_the_legacy_builder(both):
-    (wa, pa, ra), (wb, pb, rb) = both
-    za, zb = zipfile.ZipFile(wa), zipfile.ZipFile(wb)
-    charts = sorted(n for n in za.namelist() if "charts/chart" in n)
-    assert len(charts) == 3 and all(za.read(n) == zb.read(n) for n in charts)
-    text = [[p.extract_text() for p in PdfReader(path).pages] for path in (pa, pb)]
-    assert text[0] == text[1]
-    assert ra.read_bytes() == rb.read_bytes()
+def test_tokens_resolve_to_the_spec_layout(good_build):
+    wb = load_workbook(good_build / "Mobile_Detailer_Business_Tracker.xlsx")
+    assert wb["Jobs"]["H2"].value == '=IF(COUNT(F2:G2)=0,"",SUM(F2:G2))'  # {col:...}{r}
+    assert wb["Summary"]["B7"].value.startswith("=SUMIFS(Jobs!$H$2:$H$501,Jobs!$A$2:$A$501,")  # {range:...}
+    assert "DATE(Dashboard!$B$5,1,1)" in wb["Summary"]["B7"].value  # {cell:Dashboard!Tax Year}, {i}
+    assert "VLOOKUP(A2,'IRS Rates'!$A$2:$B$21,2,TRUE)" in wb["Mileage Log"]["G2"].value  # {area:...}
+    assert wb["Summary"]["I8"].value == '=IF(Lists!$C2="","",Lists!$C2)'  # {listcol:...}{i_next}
+    assert wb["IRS Rates"]["B3"].value == 0.725  # prefill from parameters
 
 
 def test_unknown_tokens_and_names_are_spec_errors(tmp_path, sample_spec):
