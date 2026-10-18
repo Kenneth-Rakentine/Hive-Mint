@@ -15,9 +15,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from agents.departments import STUB_HANDLERS, Handler, StageResult
+from agents.finance import finance_gate
 from agents.production import Production
 from agents.qa import QA
 from agents.red_team import RedTeam
+from agents.research import research_gate
 from agents.rework import active_brief, brief_payload
 from agents.testing import Testing
 from app.db import utcnow
@@ -78,8 +80,9 @@ ACTOR = "operations"
 
 
 def default_handlers(settings: Settings) -> dict[Department, Handler]:
-    """Real Production, Testing, QA and Red Team (external); the remaining departments are still stubs."""
-    return {**STUB_HANDLERS, D.PRODUCTION: Production(settings), D.TESTING: Testing(settings), D.QA: QA(settings),
+    """Real Research and Finance gates, Production, Testing, QA and Red Team (external); the rest are stubs."""
+    return {**STUB_HANDLERS, D.RESEARCH: research_gate, D.FINANCE: finance_gate(settings),
+            D.PRODUCTION: Production(settings), D.TESTING: Testing(settings), D.QA: QA(settings),
             D.RED_TEAM: RedTeam(settings)}
 
 

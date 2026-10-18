@@ -1,4 +1,4 @@
-"""Command line: python -m app.cli {init-db,demo,run,status,rework,resume,review-export,review-import}"""
+"""Command line: python -m app.cli {init-db,demo,run,status,rework,resume,review-export,review-import,research,...}"""
 
 from __future__ import annotations
 
@@ -202,6 +202,31 @@ def cmd_review_import(args) -> int:
         return 0
 
 
+def cmd_research(args) -> int:
+    """Research one niche with headless Claude Code (web search, public pages only)."""
+    from agents.research import ResearchFailed, run_niche_research
+    from app.lifecycle import LimitReached
+    from app.models import Opportunity
+    from providers.claude_headless import HeadlessRefused
+
+    settings = get_settings()
+    with _session() as session:
+        try:
+            record = run_niche_research(session, settings, args.niche)
+        except (ResearchFailed, LimitReached, HeadlessRefused) as error:
+            session.commit()  # the job, its runs and events are the record of what happened
+            console.print(f"[red]{escape(str(error))}[/red]")
+            return 2
+        session.commit()
+        console.print(f"Research record #{record.id}: [bold]{record.confidence}[/bold] confidence, "
+                      f"{len(json.loads(record.sources_json))} sources")
+        console.print(escape(record.summary))
+        for opp in session.scalars(select(Opportunity).where(Opportunity.research_id == record.id)):
+            console.print(escape(f"  opportunity #{opp.id}: {opp.title} ({opp.product_type})"))
+        console.print("Finance scores pending opportunities in the next shift.")
+        return 0
+
+
 def red_team_dir() -> Path:
     return red_team.REVIEWS_DIR
 
@@ -274,6 +299,9 @@ def main(argv: list[str] | None = None) -> int:
     import_cmd.add_argument("product_id", type=int)
     import_cmd.add_argument("verdict")
     import_cmd.set_defaults(func=cmd_review_import)
+    research = commands.add_parser("research", help="research a niche with headless Claude Code (web search)")
+    research.add_argument("--niche", required=True)
+    research.set_defaults(func=cmd_research)
     args = parser.parse_args(argv)
     return args.func(args)
 

@@ -87,3 +87,24 @@ def test_rework_command_seeds_a_brief_and_resume_returns_a_held_product(cli_env,
 
     assert cli.main(["resume", str(product.id)]) == 2  # not held
     assert cli.main(["resume", "999"]) == 2
+
+
+def test_research_command_records_a_niche(cli_env, fake_claude, capsys):
+    from app.models import Opportunity, ResearchRecord
+    from tests.test_research import research_answer
+
+    engine, _ = cli_env
+    fake_claude.replies = [{"structured_output": research_answer()}]
+    assert cli.main(["research", "--niche", "small motels"]) == 0
+    with make_session_factory(engine)() as session:
+        assert session.scalar(select(ResearchRecord)).niche == "small motels"
+        assert session.scalar(select(Opportunity)).title == "Motel Night Audit Workbook"
+    assert "high" in capsys.readouterr().out
+
+
+def test_research_command_reports_a_refusal(cli_env, fake_claude, monkeypatch, capsys):
+    engine, _ = cli_env
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    assert cli.main(["research", "--niche", "x"]) == 2
+    assert "HEADLESS_REFUSED" in capsys.readouterr().out
+    assert not fake_claude.calls
