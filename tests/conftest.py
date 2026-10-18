@@ -15,6 +15,7 @@ def settings(tmp_path):
                     storage_root=tmp_path, ollama_models_dir=tmp_path / "ollama-models",
                     min_free_disk_gb=0, max_hivemint_storage_gb=1000,
                     render_engine="none",  # tests never start Excel; test_render.py opts in explicitly
+                    recalc_engine="formulas",  # same engine on every machine, with or without LibreOffice
                     ollama_url="http://127.0.0.1:9")  # nothing listens here: tests never reach a real Ollama
 
 
