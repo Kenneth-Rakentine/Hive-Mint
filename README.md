@@ -41,7 +41,8 @@ python -m app.cli review               # what waits for your decision; review 1 
 python -m app.cli approve 1 --by "Kenny"   # approve: READY_TO_PUBLISH, then upload it by hand
 python -m app.cli relist 1 --reason "..."  # redo only the listing
 python -m app.cli reject 1 --reason "..."  # reject the product
-python -m app.cli office               # open the pixel office at http://127.0.0.1:8000 (Ctrl+C closes it)
+python -m app.cli office               # open the pixel office in its own window (Ctrl+C stops the server)
+powershell -ExecutionPolicy Bypass -File scripts\create_office_shortcut.ps1   # a "Hive-Mint Office" Desktop shortcut
 uvicorn app.api:app --host 127.0.0.1 --port 8000
 ```
 
@@ -168,7 +169,7 @@ The demo writes the product to `products\<product id>\v1\`, including `Mobile_De
 
 ## What v0.6 adds (the pixel office)
 
-`python -m app.cli office` opens a small low-bit night scene of the company in your browser, served only to this computer (127.0.0.1). The world is black, white and grey; the only colour is a deep purple moon and the faint purple light it casts. Every worker, crate and log line comes from the database (`app/office.py`, `GET /office/state`), refreshed every 5 seconds while the tab is visible:
+`python -m app.cli office` opens a small low-bit night scene of the company in its own window (Edge or Chrome app mode, no tabs or address bar), served only to this computer (127.0.0.1). `scripts\create_office_shortcut.ps1` puts a "Hive-Mint Office" shortcut on the Desktop that opens it with no console; its server stops by itself about two minutes after the last office window closes. The world is black, white and grey; the only colour is a deep purple moon and the faint purple light it casts. Every worker, crate and log line comes from the database (`app/office.py`, `GET /office/state`), refreshed every 5 seconds while the tab is visible:
 
 - each department is a decaying castle ruin, set at different depths along a winding road in pipeline order and ending at The Lighthouse (HUMAN_REVIEW and READY_TO_PUBLISH), whose lamp burns only while something waits for you; a Storefront, an Infirmary (PAUSED, ERROR) and a Graveyard (REJECTED, RETIRED) sit off the road;
 - products are crates at the building matching their status, shaded by state (white = waiting for you, black = error); when a product changed gate since the last refresh, its crate travels to the new building;
@@ -177,7 +178,7 @@ The demo writes the product to `products\<product id>\v1\`, including `Mobile_De
 - the top bar shows revenue (gold; $0 until sales tracking exists), Claude runs today against the cap, products, how many wait for you, and disk space; the log at the bottom is the Event table;
 - click a building for its products (with the command to review or resume them) and its jobs.
 
-It is one 320x180 canvas scaled up with no smoothing; it stops refreshing when the tab is hidden, and all motion stops when the system asks for reduced motion.
+It is one 320x180 canvas scaled up with no smoothing, and it stops refreshing when the window is hidden. The Motion switch in the top bar turns the ambient loops on or off; it starts from the system's reduced-motion setting (Windows: Settings > Accessibility > Visual effects > Animation effects) and remembers your choice.
 
 ## What it does not do yet
 

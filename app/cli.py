@@ -461,19 +461,45 @@ def cmd_relist(args) -> int:
 
 
 def cmd_office(args) -> int:
-    """Serve the pixel office on this computer only and open it in the browser. Ctrl+C stops it."""
+    """Open the pixel office in its own window, served on this computer only.
+
+    If the office server is already running, this just opens another window. Otherwise it starts the
+    server; with --close-when-idle (what the desktop shortcut uses) the server stops on its own a couple
+    of minutes after the last office window closes. Without it, Ctrl+C stops the server.
+    """
+    import socket
     import threading
-    import webbrowser
+    import time
 
     import uvicorn
 
-    url = f"http://127.0.0.1:{args.port}/"
-    console.print(f"The office is at [bold]{url}[/bold] (only this computer can see it). Press Ctrl+C to close it.")
-    if not args.no_browser:
-        threading.Timer(1.5, webbrowser.open, args=(url,)).start()
-    uvicorn.run("app.api:app", host="127.0.0.1", port=args.port, log_level="warning")
-    return 0
+    from app import api
+    from tools.app_window import open_window
 
+    url = f"http://127.0.0.1:{args.port}/"
+    with socket.socket() as probe:
+        running = probe.connect_ex(("127.0.0.1", args.port)) == 0
+    if running:
+        how = open_window(url, app=not args.tab)
+        console.print(f"The office is already running; opened it in a new {how} ({url}).")
+        return 0
+
+    config = uvicorn.Config("app.api:app", host="127.0.0.1", port=args.port, log_level="warning")
+    server = uvicorn.Server(config)
+    if args.close_when_idle:
+        def watchdog():
+            time.sleep(args.idle_minutes * 60)  # give the first window time to open
+            while not server.should_exit:
+                if time.monotonic() - api.last_seen() > args.idle_minutes * 60:
+                    server.should_exit = True
+                time.sleep(15)
+        threading.Thread(target=watchdog, daemon=True).start()
+    if not args.no_window:
+        threading.Timer(1.5, open_window, args=(url,), kwargs={"app": not args.tab}).start()
+    console.print(f"The office is at [bold]{url}[/bold] (only this computer can see it)."
+                  + ("" if args.close_when_idle else " Press Ctrl+C to stop it."))
+    server.run()
+    return 0
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="Hive-Mint command line")
@@ -533,9 +559,13 @@ def main(argv: list[str] | None = None) -> int:
     relist_cmd.add_argument("--reason", default="")
     relist_cmd.add_argument("--actor", default="owner")
     relist_cmd.set_defaults(func=cmd_relist)
-    office = commands.add_parser("office", help="open the pixel office in your browser (http://127.0.0.1:8000)")
+    office = commands.add_parser("office", help="open the pixel office in its own window (http://127.0.0.1:8000)")
     office.add_argument("--port", type=int, default=8000)
-    office.add_argument("--no-browser", action="store_true")
+    office.add_argument("--no-window", action="store_true", help="start the server without opening a window")
+    office.add_argument("--tab", action="store_true", help="open a normal browser tab instead of an app window")
+    office.add_argument("--close-when-idle", action="store_true",
+                        help="stop the server when no office window has checked in for --idle-minutes")
+    office.add_argument("--idle-minutes", type=float, default=2.0)
     office.set_defaults(func=cmd_office)
     args = parser.parse_args(argv)
     return args.func(args)

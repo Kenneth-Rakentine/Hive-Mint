@@ -60,6 +60,9 @@
   .shift { margin-left: auto; font-size: 14px; color: var(--fog); }
   .shift .dot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border: 1px solid var(--fog); }
   .shift.on .dot { background: var(--white); border-color: var(--white); }
+  .motion { font: 600 13px var(--body); color: var(--bone); background: var(--pitch); border: 1px solid var(--ash);
+            padding: 2px 8px; cursor: pointer; }
+  .motion[aria-pressed="false"] { color: var(--fog); }
 
   .map { grid-area: map; position: relative; padding: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .stage { position: relative; aspect-ratio: 16 / 9; width: 100%; max-height: 100%; }
@@ -117,7 +120,6 @@
     .log li { grid-template-columns: 70px 1fr; }
     .log .what { grid-column: 1 / -1; }
   }
-  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
@@ -130,6 +132,7 @@
     <div class="res" id="r-wait-wrap" title="Products waiting for your decision at the Lighthouse"><b id="r-wait">0</b><span>waiting for you</span></div>
     <div class="res" title="Free disk space, and what Hive-Mint itself takes"><b id="r-disk">–</b><span id="r-disk-label">free</span></div>
     <div class="shift" id="shift"><span class="dot"></span><span id="shift-text">Loading…</span></div>
+    <button class="motion" id="motion" type="button" aria-pressed="true">Motion on</button>
   </header>
 
   <main class="map frame" aria-label="Office map">
@@ -153,7 +156,17 @@
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   const stage = document.getElementById("stage");
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Motion follows the system's reduced-motion setting until the viewer flips the switch in the top bar;
+  // the choice is remembered in this browser only.
+  let motionOn = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  try { const saved = localStorage.getItem("hivemint.motion"); if (saved !== null) motionOn = saved === "on"; } catch (e) {}
+  const motionBtn = document.getElementById("motion");
+  const showMotion = () => { motionBtn.textContent = motionOn ? "Motion on" : "Motion off"; motionBtn.setAttribute("aria-pressed", String(motionOn)); };
+  motionBtn.addEventListener("click", () => {
+    motionOn = !motionOn; showMotion();
+    try { localStorage.setItem("hivemint.motion", motionOn ? "on" : "off"); } catch (e) {}
+  });
+  showMotion();
 
   // Greys, darkest to lightest. Nothing on the page uses colour.
   const G = ["#000000", "#141414", "#1f1f1f", "#2a2a2a", "#363636", "#444444", "#525252", "#626262",
@@ -328,7 +341,7 @@
       } else px(G[12], x - 1, y + s - 1, s + 3, 1);
     }
   }
-  if (!reduced) setInterval(() => { tide = (tide + 1) & 63; }, 260);
+  setInterval(() => { if (motionOn) tide = (tide + 1) & 63; }, 260);
 
   // ---------------------------------------------------------------- ruined buildings
   function ruin(id, hurt, lit) {
@@ -497,7 +510,7 @@
       ctx.fillStyle = G[7]; if (puff > 1) ctx.fillRect(X + 2, y + 2 - puff, 1, 1);
     }
   }
-  if (!reduced) setInterval(() => { idle = (idle + 1) % 240; }, 650);
+  setInterval(() => { if (motionOn) idle = (idle + 1) % 240; }, 650);
 
   function crate(x, y, tone) {
     const px = (c, X, Y, w = 1, h = 1) => { ctx.fillStyle = c; ctx.fillRect(X, Y, w, h); };
@@ -583,7 +596,7 @@
   }
 
   function loop(now) { draw(now); requestAnimationFrame(loop); }
-  if (!reduced) setInterval(() => { frame++; }, 380);
+  setInterval(() => { if (motionOn) frame++; }, 380);
 
   // ---------------------------------------------------------------- DOM: labels, HUD, panel, log
   const labels = {};
@@ -683,7 +696,7 @@
       const res = await fetch("/office/state", { cache: "no-store" });
       if (!res.ok) throw new Error(res.status);
       const next = await res.json();
-      if (state && !reduced) {
+      if (state && motionOn) {
         const before = lastHome;
         state = next;
         for (const b of state.buildings) for (const p of b.products) {
