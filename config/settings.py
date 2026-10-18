@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TIMEZONE = "America/New_York"
 DEFAULT_DB_URL = f"sqlite:///{(ROOT / 'data' / 'hivemint.db').as_posix()}"
 RECALC_ENGINES = ("auto", "libreoffice", "formulas")
+RENDER_ENGINES = ("auto", "excel", "libreoffice", "none")
 DEFAULT_OLLAMA_MODELS_DIR = Path.home() / ".ollama" / "models"
 
 
@@ -58,9 +59,14 @@ class Settings:
     ollama_model: str = "qwen3.5:4b"
     ollama_timeout_s: float = 120.0
     ollama_models_dir: Path = DEFAULT_OLLAMA_MODELS_DIR
-    # QA: pass score, and the most a local model's findings may deduct (deterministic checks come first).
+    # QA: pass score, and the most a local model's findings may deduct (deterministic checks come first):
+    # the text clarity pass and the chart vision pass are capped separately, and together they may not
+    # deduct more than 100 - qa_pass_score, so the local model can never fail a product on its own.
     qa_pass_score: int = 70
     qa_model_max_deduction: int = 20
+    qa_vision_max_deduction: int = 10
+    # Visual QA renders workbooks with Excel (COM) if available ("auto"), else LibreOffice; "none" skips it.
+    render_engine: str = "auto"
     # Disk guard: Production jobs pause (DISK_LIMIT) below this free space or above this folder size.
     min_free_disk_gb: float = 50.0
     max_hivemint_storage_gb: float = 20.0
@@ -78,6 +84,11 @@ class Settings:
         ZoneInfo(self.timezone)  # fail fast on an unknown timezone
         if self.recalc_engine not in RECALC_ENGINES:
             raise ValueError(f"HIVEMINT_RECALC_ENGINE must be one of {', '.join(RECALC_ENGINES)}")
+        if self.render_engine not in RENDER_ENGINES:
+            raise ValueError(f"HIVEMINT_RENDER_ENGINE must be one of {', '.join(RENDER_ENGINES)}")
+        if self.qa_model_max_deduction + self.qa_vision_max_deduction > 100 - self.qa_pass_score:
+            raise ValueError("QA_MODEL_MAX_DEDUCTION + QA_VISION_MAX_DEDUCTION must not exceed 100 - QA_PASS_SCORE, "
+                             "or the local model alone could fail a product")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -97,6 +108,8 @@ class Settings:
             ollama_models_dir=Path(os.getenv("OLLAMA_MODELS") or DEFAULT_OLLAMA_MODELS_DIR),
             qa_pass_score=_int("QA_PASS_SCORE", 70),
             qa_model_max_deduction=_int("QA_MODEL_MAX_DEDUCTION", 20),
+            qa_vision_max_deduction=_int("QA_VISION_MAX_DEDUCTION", 10),
+            render_engine=os.getenv("HIVEMINT_RENDER_ENGINE", "auto"),
             min_free_disk_gb=_float("MIN_FREE_DISK_GB", 50.0),
             max_hivemint_storage_gb=_float("MAX_HIVEMINT_STORAGE_GB", 20.0),
             storage_root=Path(os.getenv("HIVEMINT_STORAGE_ROOT", ROOT)),
