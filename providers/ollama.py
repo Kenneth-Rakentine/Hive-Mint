@@ -7,6 +7,7 @@ ProviderUnavailable; the Operations Manager's bounded job retries take it from t
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 
@@ -35,9 +36,13 @@ class OllamaProvider:
         self.client = client or httpx.Client(base_url=settings.ollama_url, timeout=settings.ollama_timeout_s)
 
     def generate(self, job: Job, department: Department, prompt: str, *, system: str = "",
-                 response_model: type[BaseModel] | None = None) -> Completion:
-        """One chat call. With response_model, the output is constrained to its JSON schema and validated."""
-        messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
+                 response_model: type[BaseModel] | None = None, images: list[bytes] | None = None) -> Completion:
+        """One chat call. With response_model, the output is constrained to its JSON schema and validated.
+        images (PNG bytes) go to a vision-capable model with the prompt."""
+        user = {"role": "user", "content": prompt}
+        if images:
+            user["images"] = [base64.b64encode(image).decode("ascii") for image in images]
+        messages = ([{"role": "system", "content": system}] if system else []) + [user]
         body = {"model": self.model, "messages": messages, "stream": False, "think": False,
                 "options": {"temperature": 0}}
         if response_model is not None:

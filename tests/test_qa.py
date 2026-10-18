@@ -3,6 +3,7 @@
 import json
 from dataclasses import replace
 
+import httpx
 import pytest
 from sqlalchemy import select
 
@@ -15,7 +16,9 @@ from agents.qa import (
 from app.lifecycle import resume
 from app.models import AgentRun, Review, ReworkBrief
 from app.states import Department, JobStatus, ProductStatus as S
+from config.settings import Settings
 from tests.conftest import advance_to, ollama_client, ollama_down, ollama_reply, record_build
+from tools.render import RenderedChart, RenderResult
 
 CLEAR = {"clarity_score": 90, "findings": [
     {"severity": "minor", "where": "Dashboard", "issue": "Say which cells are yellow", "suggestion": "Add a key"}]}
@@ -81,6 +84,14 @@ def test_model_findings_alone_cannot_fail_a_product():
     model = [Finding("model", "clarity", "major", "x", "unclear") for _ in range(8)]
     report = score_report(model, pass_score=70, model_cap=20)
     assert report["model_deduction"] == 20 and report["score"] == 80 and report["decision"] == "PASS"
+    vision = [Finding("vision", "chart_visual", "major", "chart", "looks off") for _ in range(15)]
+    both = score_report(model + vision, pass_score=70, model_cap=20, vision_cap=10)
+    assert (both["model_deduction"], both["vision_deduction"], both["score"], both["decision"]) == (20, 10, 70, "PASS")
+
+
+def test_ai_caps_that_could_fail_a_product_alone_are_refused():
+    with pytest.raises(ValueError, match="local model alone"):
+        Settings(qa_pass_score=70, qa_model_max_deduction=25, qa_vision_max_deduction=10)
     blocking = score_report([Finding("deterministic", "docs_mention_files", "major", "README.txt", "x")],
                             pass_score=70, model_cap=20)
     assert blocking["score"] == 85 and blocking["decision"] == "REWORK"
@@ -155,6 +166,108 @@ def test_ollama_down_gives_bounded_retries_then_error(session, settings, product
     ops.handlers[Department.QA] = QA(settings, ollama_client(lambda request: ollama_reply(CLEAR)))
     ops.tick()
     assert product_at_qa.status == S.RED_TEAM
+
+
+# --------------------------------------------------------------------------- visual QA
+
+VISION_BAD = {"looks_ok": False, "findings": [
+    {"severity": "major", "problem": "overlapping_text", "issue": "Title sits on the gridlines",
+     "suggestion": "Move it"},
+    {"severity": "major", "problem": "duplicate_axis_labels", "issue": "$0 $0 $1 $1 on the axis"}]}
+
+
+def _fake_renderer(engine="excel"):
+    """Stands in for Excel: writes one PNG per spec'd chart and reports them, as tools.render does."""
+    calls = []
+
+    def render(workbooks, out_dir):
+        calls.append((workbooks, out_dir))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        result = RenderResult(engine=engine, out_dir=str(out_dir))
+        for index, title in enumerate(["Income vs Costs by Month", "Profit After Mileage by Month",
+                                       "Costs by Category"], start=1):
+            png = out_dir / f"chart{index}.png"
+            png.write_bytes(b"\x89PNG fake " + title.encode())
+            result.charts.append(RenderedChart(workbooks[0].name, "Dashboard", index, title, str(png)))
+        return result
+
+    render.calls = calls
+    return render
+
+
+def test_vision_pass_sends_every_chart_image_and_is_capped(session, settings, product_at_qa, sample_spec,
+                                                           good_build):
+    build = record_build(session, product_at_qa, good_build, sample_spec)
+    seen = []
+
+    def handler(request):
+        message = json.loads(request.content)["messages"][-1]
+        seen.append(message)
+        return ollama_reply(VISION_BAD if message.get("images") else CLEAR, prompt_tokens=700)
+
+    renderer = _fake_renderer()
+    qa = QA(settings, ollama_client(handler), renderer=renderer)
+    ops = OperationsManager(session, settings, handlers={**STUB_HANDLERS, Department.QA: qa})
+    job = ops.next_job(product_at_qa)
+    ops.run_job(job)
+
+    (workbooks, out_dir), = renderer.calls
+    assert [p.name for p in workbooks] == ["Mobile_Detailer_Business_Tracker.xlsx"]
+    assert out_dir == good_build / "renders"
+    images = [m for m in seen if m.get("images")]
+    assert len(images) == 3 and all(len(m["images"]) == 1 for m in images)
+    assert '"Costs by Category" on the Dashboard tab of a blank template' in images[2]["content"]
+    assert "NOT a problem" in images[0]["content"]  # empty charts are expected in a template
+
+    review = session.scalar(select(Review))
+    report = json.loads(review.report_json)
+    vision = [f for f in report["findings"] if f["source"] == "vision"]
+    assert len(vision) == 6 and vision[0]["issue"] == "[overlapping_text] Title sits on the gridlines"
+    assert "chart1.png" in vision[0]["where"]
+    # 6 major vision findings = 90 points, capped at 10; text 1 minor = 5: still a PASS, the model can't fail it.
+    assert (report["vision_deduction"], report["model_deduction"], report["score"]) == (10, 5, 85)
+    assert product_at_qa.status == S.RED_TEAM and "3 chart(s) rendered by excel" in review.summary
+    assert report["render"]["engine"] == "excel" and len(report["render"]["charts"]) == 3
+    runs = session.scalars(select(AgentRun).where(AgentRun.job_id == job.id, AgentRun.provider == "ollama")).all()
+    assert len(runs) == 4 and all(r.cost_usd_micros == 0 and r.tier == 1 for r in runs)  # 1 text + 3 charts
+    assert build.version == report["build_version"]
+
+
+def test_skipped_render_is_reported_and_skips_the_vision_pass(session, settings, product_at_qa, sample_spec,
+                                                               good_build):
+    record_build(session, product_at_qa, good_build, sample_spec)
+    calls = []
+
+    def handler(request):
+        calls.append(json.loads(request.content)["messages"][-1])
+        return ollama_reply(CLEAR)
+
+    ops = _qa_ops(session, settings, ollama_client(handler))  # settings.render_engine == "none"
+    ops.run_job(ops.next_job(product_at_qa))
+
+    assert len(calls) == 1 and "images" not in calls[0]
+    review = session.scalar(select(Review))
+    report = json.loads(review.report_json)
+    (skip,) = [f for f in report["findings"] if f["source"] == "render"]
+    assert skip["severity"] == "info" and "Visual render skipped" in skip["issue"]
+    assert "visual render skipped" in review.summary and product_at_qa.status == S.RED_TEAM
+
+
+def test_ollama_down_during_the_vision_pass_retries_then_errors(session, settings, product_at_qa, sample_spec,
+                                                               good_build):
+    record_build(session, product_at_qa, good_build, sample_spec)
+
+    def handler(request):
+        if json.loads(request.content)["messages"][-1].get("images"):
+            raise httpx.ConnectError("connection refused", request=request)
+        return ollama_reply(CLEAR)
+
+    qa = QA(settings, ollama_client(handler), renderer=_fake_renderer())
+    ops = OperationsManager(session, settings, handlers={**STUB_HANDLERS, Department.QA: qa})
+    job = ops.next_job(product_at_qa)
+    ops.run_job(job)
+    assert job.status == JobStatus.FAILED and job.attempts == 3 and "OLLAMA_UNAVAILABLE" in job.error
+    assert product_at_qa.status == S.ERROR and session.scalar(select(Review)) is None
 
 
 def test_qa_without_a_build_goes_to_rework(session, settings, product_at_qa):

@@ -22,6 +22,19 @@ def job(session, settings, make_product):
     return OperationsManager(session, settings).next_job(make_product())
 
 
+def test_images_are_sent_base64_encoded_with_the_prompt(session, settings, job):
+    seen = {}
+
+    def handler(request):
+        seen.update(json.loads(request.content))
+        return ollama_reply({"verdict": "clean", "score": 90})
+
+    OllamaProvider(settings, session, client=ollama_client(handler)).generate(
+        job, Department.QA, "Look at this chart", response_model=Answer, images=[b"\x89PNG\r\n"])
+    user = seen["messages"][-1]
+    assert user["content"] == "Look at this chart" and user["images"] == ["iVBORw0K"]
+
+
 def test_successful_call_is_logged_as_a_free_tier1_agent_run(session, settings, job):
     seen = {}
 

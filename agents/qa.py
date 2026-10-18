@@ -1,20 +1,28 @@
-"""QA department: "is it good?" Deterministic checks first, then a local-model pass.
+"""QA department: "is it good?" Deterministic checks first, then local-model passes.
 
 Deterministic (no AI): spelling against a dictionary plus a domain allowlist, consistent
-sheet and column naming, every spec feature present in the build, and the README and PDF
-naming every file in the download. Then the Tier 1 local model (Ollama) reads a compact
-text digest of the product, never raw files, and reports clarity problems and confusing
-instructions.
+sheet and column naming, every spec feature present in the build, the README and PDF
+naming every file in the download, and chart checks read from the workbook XML
+(tools/chart_checks.py: title overlay, month labels, legend placement, axis format and
+scale, chart overlap, print area and screen width).
 
-The model cannot fail a product on its own: its findings are capped at "major" and their
-total deduction at QA_MODEL_MAX_DEDUCTION. A critical or major deterministic finding, or a
-score under QA_PASS_SCORE, sends the product to REWORK with a rework brief.
+Then the Tier 1 local model (Ollama) reads a compact text digest of the product, never raw
+files, and reports clarity problems. Visual QA renders each workbook the way a buyer sees it
+(tools/render.py: Excel, else LibreOffice, else a clear skip) and the same local model looks
+at every chart PNG against a checklist: overlapping text, clipped or duplicate labels,
+unreadable colors, anything broken.
+
+The model cannot fail a product on its own: its findings are capped at "major", and their
+deductions at QA_MODEL_MAX_DEDUCTION (text) and QA_VISION_MAX_DEDUCTION (charts), which
+together may not exceed 100 - QA_PASS_SCORE. A critical or major deterministic finding, or
+a score under QA_PASS_SCORE, sends the product to REWORK with a rework brief.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -33,12 +41,15 @@ from app.models import Build, Job, Product, Review
 from app.states import Department, Outcome, ProductStatus
 from config.settings import ROOT, Settings
 from providers.ollama import OllamaProvider
+from tools.chart_checks import chart_checks
 from tools.digest import pdf_text, product_digest, workbook_text
+from tools.render import RENDERS_DIR, RenderResult, render_workbooks
 from tools.spec import load_spec
 
 S = ProductStatus
 SEVERITY_POINTS = {"critical": 40, "major": 15, "minor": 5, "info": 0}
 BLOCKING = frozenset({"critical", "major"})
+AI_SOURCES = ("model", "vision")
 ALLOWLIST = ROOT / "config" / "qa_words.txt"
 SMALL_WORDS = frozenset({"a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "per", "the", "to",
                          "vs", "with"})
@@ -64,9 +75,27 @@ PRODUCT DIGEST
 """
 
 
+VISION_SYSTEM = ("You are the visual QA reviewer for spreadsheet templates sold to small-business owners. You look "
+                 "at one chart image exported from Excel and report only visible layout defects. Be strict about "
+                 "defects and do not invent problems; a clean chart gets no findings.")
+VISION_PROMPT = """This is the chart "{title}" on the {sheet} tab of a blank template: the buyer has not entered data
+yet, so empty bars and $0 values are expected and are NOT a problem.
+
+Check, and report only what you can actually see:
+1. overlapping_text: the title, legend or any labels drawn on top of the plot, gridlines or each other
+2. clipped_label: text cut off at an edge, or a label that is only partly visible
+3. duplicate_axis_labels: the same value repeated on an axis (for example $0 $0 $1 $1)
+4. unreadable: labels rotated, too small or too crowded to read, or colors with too little contrast
+5. broken: anything else that would look broken or unprofessional to a buyer
+
+Return JSON: looks_ok (true if none of these apply) and up to 5 findings, each with severity "minor" or
+"major", problem (one of the five names above, or "other"), issue (what and where), and suggestion.
+"""
+
+
 @dataclass
 class Finding:
-    source: str  # "deterministic" or "model"
+    source: str  # "deterministic", "model" (text clarity), "vision" (chart images) or "render"
     check: str
     severity: str
     where: str
@@ -84,6 +113,18 @@ class ModelFinding(BaseModel):
 class ModelReview(BaseModel):
     clarity_score: int = Field(ge=0, le=100)
     findings: list[ModelFinding] = Field(default_factory=list, max_length=8)
+
+
+class VisionFinding(BaseModel):
+    severity: Literal["minor", "major"]
+    problem: Literal["overlapping_text", "clipped_label", "duplicate_axis_labels", "unreadable", "broken", "other"]
+    issue: str
+    suggestion: str = ""
+
+
+class VisionReview(BaseModel):
+    looks_ok: bool
+    findings: list[VisionFinding] = Field(default_factory=list, max_length=5)
 
 
 # --------------------------------------------------------------------------- deterministic checks
@@ -231,6 +272,8 @@ def deterministic_checks(spec: dict, build_dir: Path, extra_words: set[str] | No
                         headers[sheet] = entry["headers"]
                     texts[f"{file_spec['name']}:{sheet}"] = " ".join(
                         [sheet] + entry["headers"] + entry["text"] + entry["charts"])
+                findings += [Finding("deterministic", p.check, "major", p.where, p.issue, p.suggestion)
+                             for p in chart_checks(file_spec, path)]
             elif file_spec["kind"] == "pdf":
                 doc_texts[file_spec["name"]] = texts[file_spec["name"]] = pdf_text(path)
             else:
@@ -247,20 +290,23 @@ def deterministic_checks(spec: dict, build_dir: Path, extra_words: set[str] | No
 
 # --------------------------------------------------------------------------- scoring
 
-def score_report(findings: list[Finding], *, pass_score: int, model_cap: int) -> dict:
-    deterministic = sum(SEVERITY_POINTS[f.severity] for f in findings if f.source != "model")
+def score_report(findings: list[Finding], *, pass_score: int, model_cap: int, vision_cap: int = 0) -> dict:
+    """Deterministic findings deduct in full and can block; each AI pass deducts at most its cap."""
+    deterministic = sum(SEVERITY_POINTS[f.severity] for f in findings if f.source not in AI_SOURCES)
     model = min(model_cap, sum(SEVERITY_POINTS[f.severity] for f in findings if f.source == "model"))
-    score = max(0, 100 - deterministic - model)
-    blocking = [f for f in findings if f.source != "model" and f.severity in BLOCKING]
+    vision = min(vision_cap, sum(SEVERITY_POINTS[f.severity] for f in findings if f.source == "vision"))
+    score = max(0, 100 - deterministic - model - vision)
+    blocking = [f for f in findings if f.source not in AI_SOURCES and f.severity in BLOCKING]
     decision = "PASS" if score >= pass_score and not blocking else "REWORK"
     return {"score": score, "decision": decision, "pass_score": pass_score, "deterministic_deduction": deterministic,
-            "model_deduction": model, "model_deduction_cap": model_cap}
+            "model_deduction": model, "model_deduction_cap": model_cap, "vision_deduction": vision,
+            "vision_deduction_cap": vision_cap}
 
 
 def required_changes(findings: list[Finding]) -> list[dict]:
     """REWORK brief items: every critical or major finding, deterministic first."""
     changes = []
-    ordered = sorted(findings, key=lambda f: (f.source == "model", f.check))
+    ordered = sorted(findings, key=lambda f: (f.source in AI_SOURCES, f.check))
     for index, finding in enumerate((f for f in ordered if f.severity in BLOCKING), start=1):
         changes.append({"id": f"qa-{finding.check.replace('_', '-')}-{index}",
                         "change": finding.suggestion or f"Fix: {finding.issue}",
@@ -271,12 +317,17 @@ def required_changes(findings: list[Finding]) -> list[dict]:
 
 # --------------------------------------------------------------------------- department
 
+Renderer = Callable[[list[Path], Path], RenderResult]
+
+
 class QA:
     provider = "qa"
 
-    def __init__(self, settings: Settings, client: httpx.Client | None = None):
+    def __init__(self, settings: Settings, client: httpx.Client | None = None, renderer: Renderer | None = None):
         self.settings = settings
         self.client = client
+        self.renderer = renderer or (lambda workbooks, out_dir: render_workbooks(
+            workbooks, out_dir, preference=settings.render_engine, soffice_path=settings.soffice_path))
 
     def __call__(self, product: Product, job: Job) -> StageResult:
         session = object_session(product)
@@ -297,14 +348,22 @@ class QA:
         findings += [Finding("model", "clarity", f.severity, f.where, f.issue, f.suggestion)
                      for f in model_review.findings]
 
+        render = self.renderer([build_dir / f["name"] for f in spec["files"] if f["kind"] == "xlsx"],
+                               build_dir / RENDERS_DIR)
+        findings += [Finding("render", "render", "info", "visual render", warning) for warning in render.warnings]
+        findings += self._vision_pass(provider, job, render)
+
         report = score_report(findings, pass_score=self.settings.qa_pass_score,
-                              model_cap=self.settings.qa_model_max_deduction)
+                              model_cap=self.settings.qa_model_max_deduction,
+                              vision_cap=self.settings.qa_vision_max_deduction)
         report |= {"build_version": build.version, "clarity_score": model_review.clarity_score,
-                   "model": completion.model, "findings": [asdict(f) for f in findings]}
+                   "model": completion.model, "render": render.as_dict(), "findings": [asdict(f) for f in findings]}
         counts = {s: sum(f.severity == s for f in findings) for s in ("critical", "major", "minor")}
+        visual = (f"{len(render.charts)} chart(s) rendered by {render.engine} and reviewed" if render.engine
+                  else "visual render skipped")
         summary = (f"QA {report['decision']} v{build.version}: score {report['score']}/100 "
                    f"(pass {report['pass_score']}); {counts['critical']} critical, {counts['major']} major, "
-                   f"{counts['minor']} minor; model clarity {model_review.clarity_score}/100")
+                   f"{counts['minor']} minor; model clarity {model_review.clarity_score}/100; {visual}")
         review = Review(product_id=product.id, job_id=job.id, build_id=build.id, department=Department.QA,
                         reviewer=f"qa+{provider.name}", model=completion.model, decision=report["decision"],
                         score=report["score"], summary=summary, findings_json=json.dumps(report["findings"]),
@@ -326,3 +385,15 @@ class QA:
                              build=build)
         top = "; ".join(f"[{f.severity}] {f.issue}" for f in blocking[:3])
         return StageResult(Outcome.FAIL, S.REWORK, f"{summary}. {top}".strip(), data | {"rework_brief_id": brief.id})
+
+    def _vision_pass(self, provider: OllamaProvider, job: Job, render: RenderResult) -> list[Finding]:
+        """One local-model call per chart image. Ollama down raises, and the job retries like the text pass."""
+        findings = []
+        for chart in render.charts:
+            prompt = VISION_PROMPT.format(title=chart.title, sheet=chart.sheet)
+            completion = provider.generate(job, Department.QA, prompt, system=VISION_SYSTEM,
+                                           response_model=VisionReview, images=[Path(chart.png).read_bytes()])
+            where = f"{chart.sheet}: chart {chart.index} '{chart.title}' ({Path(chart.png).name})"
+            findings += [Finding("vision", "chart_visual", f.severity, where, f"[{f.problem}] {f.issue}", f.suggestion)
+                         for f in completion.data.findings]
+        return findings
