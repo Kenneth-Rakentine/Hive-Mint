@@ -13,7 +13,7 @@ Requires [Python 3.13](https://www.python.org/downloads/windows/) and [Git](http
 ```powershell
 git clone https://github.com/Kenneth-Rakentine/Hive-Mint.git
 cd Hive-Mint
-git switch v0.2
+git switch main
 
 py -3.13 -m venv .venv            # skip if .venv already exists
 .venv\Scripts\Activate.ps1        # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
