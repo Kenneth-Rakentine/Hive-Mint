@@ -10,7 +10,8 @@ from agents.departments import STUB_HANDLERS
 from agents.operations import OperationsManager
 from agents.production import Production
 from agents.red_team import RedTeamVerdict, VerdictError, export_packet, import_verdict
-from agents.rework import BriefFile
+from agents.rework import BriefFile, create_brief
+from app.lifecycle import transition
 from app.models import AgentRun, Build, Job, Review, ReworkBrief
 from app.states import OPEN_JOB_STATUSES, Department, JobStatus, ProductStatus as S
 from config.settings import ROOT
@@ -18,6 +19,7 @@ from tests.conftest import advance_to, record_build
 from tools.spec import load_spec
 
 SEED = ROOT / "config" / "rework" / "mobile-auto-detailer-income-expense-tracker-001.json"
+CHART_BRIEF = ROOT / "config" / "rework" / "mobile-auto-detailer-income-expense-tracker-002.json"
 
 
 def _verdict(product, decision="PASS", version=1, **extra):
@@ -140,6 +142,29 @@ def test_seed_brief_is_valid_and_resolved_by_spec_v2():
     ids = [c.id for c in brief.required_changes]
     assert ids == ["merge_workbooks", "dashboard_charts", "profit_after_mileage", "tax_set_aside"]
     assert set(ids) <= set(load_spec("mobile-auto-detailer-income-expense-tracker")["resolves"])
+
+
+def test_chart_brief_is_valid_and_resolved_by_spec_v3():
+    brief = BriefFile.model_validate(json.loads(CHART_BRIEF.read_text(encoding="utf-8")))
+    ids = [c.id for c in brief.required_changes]
+    assert ids == ["chart_titles_clear", "chart_month_labels", "chart_axis_scale", "chart_layout_fits"]
+    assert set(ids) <= set(load_spec("mobile-auto-detailer-income-expense-tracker")["resolves"])
+
+
+def test_human_rework_at_red_team_cancels_the_waiting_red_team_job(session, settings, at_red_team):
+    """tick() never runs a Red Team job, so a stale one must not block the product's next job."""
+    red_team_job = OperationsManager(session, settings).open_job(at_red_team)
+    brief = BriefFile.model_validate(json.loads(CHART_BRIEF.read_text(encoding="utf-8")))
+    create_brief(session, at_red_team, source="HUMAN", actor="owner", summary=brief.summary,
+                 required_changes=[c.model_dump() for c in brief.required_changes])
+    transition(session, settings, at_red_team, S.REWORK, actor="owner", reason="chart fixes")
+
+    ops = OperationsManager(session, settings)
+    job = ops.next_job(at_red_team)
+    assert red_team_job.status == JobStatus.CANCELLED and "Stale" in red_team_job.error
+    assert job is not None and job.department == Department.PRODUCT_DESIGN
+    ops.run_job(job)
+    assert at_red_team.status == S.PRODUCTION  # spec v3 resolves every chart change
 
 
 def test_reviews_folder_is_gitignored():

@@ -100,7 +100,13 @@ class OperationsManager:
     def next_job(self, product: Product) -> Job | None:
         """Queue the job for the product's current gate. Returns None if nothing was queued."""
         department = self.route(product)
-        if department is None or self.open_job(product) is not None:
+        open_job = self.open_job(product)
+        if open_job is not None and open_job.for_status != product.status:
+            # e.g. a queued Red Team job when a person sent the product to REWORK; tick() never
+            # runs external jobs, so without this the product would wait on it forever.
+            self._cancel_stale(open_job)
+            open_job = None
+        if department is None or open_job is not None:
             return None
         if department == D.PRODUCTION and self.builds_today() >= self.settings.max_builds_per_day:
             self._defer(product, f"Daily build limit reached ({self.settings.max_builds_per_day})")
@@ -142,10 +148,7 @@ class OperationsManager:
             raise ValueError(f"Job {job.id} is {job.status}, not QUEUED")
         product = job.product
         if product.status != job.for_status:
-            job.status, job.finished_at = JobStatus.CANCELLED, utcnow()
-            job.error = f"Stale: product moved from {job.for_status} to {product.status}"
-            log_event(self.session, "job.cancelled", actor=ACTOR, job=job, message=job.error)
-            return job
+            return self._cancel_stale(job)
 
         if job.department == D.PRODUCTION and (limit := check_disk(self.settings)):
             job.status, job.error = JobStatus.PAUSED, limit
@@ -179,6 +182,12 @@ class OperationsManager:
         job.error = f"Failed after {job.attempts} attempt(s); last error: {run.error}"
         log_event(self.session, "job.failed", actor=ACTOR, job=job, message=job.error)
         transition(self.session, self.settings, product, S.ERROR, actor=ACTOR, reason=job.error, job=job)
+        return job
+
+    def _cancel_stale(self, job: Job) -> Job:
+        job.status, job.finished_at = JobStatus.CANCELLED, utcnow()
+        job.error = f"Stale: product moved from {job.for_status} to {job.product.status}"
+        log_event(self.session, "job.cancelled", actor=ACTOR, job=job, message=job.error)
         return job
 
     def complete_external_job(self, job: Job, result: StageResult, *, provider: str, model: str, tier: int) -> Job:
