@@ -118,7 +118,7 @@ def record_build(session, product, build_dir, spec, version=1):
     return build
 
 
-def ollama_reply(content, *, prompt_tokens=120, completion_tokens=40, status=200):
+def ollama_reply(content, *, prompt_tokens=120, completion_tokens=40, status=200, done_reason="stop"):
     """A canned /api/chat response. content may be a dict (sent as JSON text) or a string."""
     import json
 
@@ -126,7 +126,7 @@ def ollama_reply(content, *, prompt_tokens=120, completion_tokens=40, status=200
 
     text = content if isinstance(content, str) else json.dumps(content)
     return httpx.Response(status, json={"model": "qwen3.5:4b", "message": {"role": "assistant", "content": text},
-                                        "done": True, "prompt_eval_count": prompt_tokens,
+                                        "done": True, "done_reason": done_reason, "prompt_eval_count": prompt_tokens,
                                         "eval_count": completion_tokens})
 
 

@@ -58,6 +58,8 @@ class Settings:
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3.5:4b"
     ollama_timeout_s: float = 120.0
+    # Context window (prompt + answer) requested per call; Ollama's own default (4096) truncates QA's answers.
+    ollama_num_ctx: int = 8192
     ollama_models_dir: Path = DEFAULT_OLLAMA_MODELS_DIR
     # QA: pass score, and the most a local model's findings may deduct (deterministic checks come first):
     # the text clarity pass and the chart vision pass are capped separately, and together they may not
@@ -105,6 +107,7 @@ class Settings:
             ollama_url=os.getenv("OLLAMA_URL", "http://127.0.0.1:11434"),
             ollama_model=os.getenv("OLLAMA_MODEL", "qwen3.5:4b"),
             ollama_timeout_s=_float("OLLAMA_TIMEOUT_S", 120.0),
+            ollama_num_ctx=_int("OLLAMA_NUM_CTX", 8192),
             ollama_models_dir=Path(os.getenv("OLLAMA_MODELS") or DEFAULT_OLLAMA_MODELS_DIR),
             qa_pass_score=_int("QA_PASS_SCORE", 70),
             qa_model_max_deduction=_int("QA_MODEL_MAX_DEDUCTION", 20),

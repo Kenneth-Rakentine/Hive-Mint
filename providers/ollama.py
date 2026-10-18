@@ -44,7 +44,7 @@ class OllamaProvider:
             user["images"] = [base64.b64encode(image).decode("ascii") for image in images]
         messages = ([{"role": "system", "content": system}] if system else []) + [user]
         body = {"model": self.model, "messages": messages, "stream": False, "think": False,
-                "options": {"temperature": 0}}
+                "options": {"temperature": 0, "num_ctx": self.settings.ollama_num_ctx}}
         if response_model is not None:
             body["format"] = response_model.model_json_schema()
 
@@ -56,6 +56,7 @@ class OllamaProvider:
         try:
             completion = self._call(body, response_model, clock)
         except ProviderError as error:
+            run.prompt_tokens, run.completion_tokens = error.prompt_tokens, error.completion_tokens
             self._finish(run, clock, JobStatus.FAILED, error=str(error))
             raise
         run.prompt_tokens, run.completion_tokens = completion.prompt_tokens, completion.completion_tokens
@@ -78,15 +79,18 @@ class OllamaProvider:
         except (ValueError, KeyError, TypeError) as error:
             raise ProviderError(f"Ollama response was not a chat message: {response.text[:300]}") from error
 
+        tokens = {"prompt_tokens": int(payload.get("prompt_eval_count") or 0),
+                  "completion_tokens": int(payload.get("eval_count") or 0)}
         data = None
         if response_model is not None:
             try:
                 data = response_model.model_validate(json.loads(text))
             except (ValueError, ValidationError) as error:
-                raise ProviderError(f"Model output did not match {response_model.__name__}: {error}") from error
-        return Completion(text=text, model=payload.get("model", self.model),
-                          prompt_tokens=int(payload.get("prompt_eval_count") or 0),
-                          completion_tokens=int(payload.get("eval_count") or 0),
+                cut = " (output cut off at the context limit: raise OLLAMA_NUM_CTX)" \
+                    if payload.get("done_reason") == "length" else ""
+                raise ProviderError(f"Model output did not match {response_model.__name__}{cut}: {error}",
+                                    **tokens) from error
+        return Completion(text=text, model=payload.get("model", self.model), **tokens,
                           duration_ms=int((time.perf_counter() - clock) * 1000), data=data)
 
     def _finish(self, run: AgentRun, clock: float, status: JobStatus, *, summary: str = "",

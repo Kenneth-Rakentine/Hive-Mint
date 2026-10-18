@@ -6,7 +6,13 @@ from dataclasses import dataclass, field
 
 
 class ProviderError(RuntimeError):
-    """The provider answered, but not usefully (bad status, unparseable or invalid output)."""
+    """The provider answered, but not usefully (bad status, unparseable or invalid output).
+
+    Token counts are kept when the provider reported them, so a failed call is still logged in full."""
+
+    def __init__(self, message: str, *, prompt_tokens: int = 0, completion_tokens: int = 0):
+        super().__init__(message)
+        self.prompt_tokens, self.completion_tokens = prompt_tokens, completion_tokens
 
 
 class ProviderUnavailable(ProviderError):

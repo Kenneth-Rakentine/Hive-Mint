@@ -22,6 +22,21 @@ def job(session, settings, make_product):
     return OperationsManager(session, settings).next_job(make_product())
 
 
+def test_truncated_output_is_logged_with_its_tokens_and_says_why(session, settings, job):
+    seen = {}
+
+    def handler(request):
+        seen.update(json.loads(request.content))
+        return ollama_reply('{"verdict": "cle', prompt_tokens=3150, completion_tokens=946, done_reason="length")
+
+    with pytest.raises(ProviderError, match="cut off at the context limit"):
+        OllamaProvider(settings, session, client=ollama_client(handler)).generate(
+            job, Department.QA, "Review", response_model=Answer)
+    assert seen["options"]["num_ctx"] == settings.ollama_num_ctx == 8192
+    run = session.scalar(select(AgentRun))
+    assert (run.status, run.prompt_tokens, run.completion_tokens) == (JobStatus.FAILED, 3150, 946)
+
+
 def test_images_are_sent_base64_encoded_with_the_prompt(session, settings, job):
     seen = {}
 
