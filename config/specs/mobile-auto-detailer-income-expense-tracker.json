@@ -1,13 +1,15 @@
 {
   "slug": "mobile-auto-detailer-income-expense-tracker",
   "name": "Mobile Auto Detailer Income & Expense Tracker",
-  "spec_version": 2,
+  "spec_version": 3,
   "builder": "mobile_detailer_tracker",
   "zip_name": "Mobile_Detailer_Business_Tracker.zip",
-  "resolves": ["merge_workbooks", "dashboard_charts", "profit_after_mileage", "tax_set_aside"],
+  "resolves": ["merge_workbooks", "dashboard_charts", "profit_after_mileage", "tax_set_aside",
+               "chart_titles_clear", "chart_month_labels", "chart_axis_scale", "chart_layout_fits"],
   "changelog": [
     {"spec_version": 1, "summary": "Four separate workbooks, instructions PDF and README."},
-    {"spec_version": 2, "summary": "One workbook with tabs (jobs feed income and customer history; supply purchases count as expenses), a Dashboard with three charts, profit after the mileage deduction and a user-set tax set-aside %."}
+    {"spec_version": 2, "summary": "One workbook with tabs (jobs feed income and customer history; supply purchases count as expenses), a Dashboard with three charts, profit after the mileage deduction and a user-set tax set-aside %."},
+    {"spec_version": 3, "summary": "Chart fixes: titles above the plot, short horizontal month labels, legend clear of the axis, fixed value-axis scales that read cleanly on an empty workbook, and charts placed side by side without overlap inside a one-page print area that fits a 1920 px screen at 100% zoom."}
   ],
   "parameters": {
     "data_rows": 500,
@@ -72,10 +74,19 @@
       "sheets": [
         {"name": "How to Use"},
         {"name": "Dashboard",
+         "chart_layout": {"print_area": "A1:S35", "max_right_px": 1440,
+                          "comment": "Excel at 100% zoom on a 1920 px screen with 125% Windows scaling shows about 1490 logical px of sheet; checked at 96 and 120 DPI"},
          "charts": [
-           {"title": "Income vs Costs by Month", "series": 3},
-           {"title": "Profit After Mileage by Month", "series": 1},
-           {"title": "Costs by Category", "series": 1}
+           {"title": "Income vs Costs by Month", "series": 3, "anchor": "D4", "width_px": 500, "height_px": 300,
+            "category_axis": "months", "legend": "t",
+            "value_axis": {"min": 0, "major_unit": 1000, "num_fmt": "\"$\"#,##0"}},
+           {"title": "Profit After Mileage by Month", "series": 1, "anchor": "D20", "width_px": 500,
+            "height_px": 300, "category_axis": "months",
+            "value_axis": {"allow_negative": true, "major_unit": 1000, "num_fmt": "\"$\"#,##0"},
+            "comment": "No fixed minimum: a loss month must show below zero, not be cut off"},
+           {"title": "Costs by Category", "series": 1, "anchor": "L4", "width_px": 500, "height_px": 300,
+            "horizontal": true,
+            "value_axis": {"min": 0, "major_unit": 1000, "num_fmt": "\"$\"#,##0"}}
          ]},
         {"name": "Jobs", "header_row": 1, "freeze_header": true,
          "columns": ["Date", "Customer Name", "Vehicle", "Service", "Payment Method", "Service Amount", "Tip",
@@ -144,9 +155,9 @@
            {"sheet": "Dashboard", "label": "Net Profit", "value": 700},
            {"sheet": "Dashboard", "label": "Profit Margin", "value": 0.7},
            {"sheet": "Dashboard", "label": "Jobs Completed", "value": 1},
-           {"sheet": "Summary", "label": "February", "offset": 4, "value": -50},
-           {"sheet": "Summary", "label": "March", "offset": 4, "value": 750},
-           {"sheet": "Summary", "label": "December", "offset": 1, "value": 0},
+           {"sheet": "Summary", "label": "Feb", "offset": 4, "value": -50},
+           {"sheet": "Summary", "label": "Mar", "offset": 4, "value": 750},
+           {"sheet": "Summary", "label": "Dec", "offset": 1, "value": 0},
            {"sheet": "Summary", "label": "Costs by Category", "row_offset": 1, "offset": 1, "value": 50},
            {"sheet": "Summary", "label": "Costs by Category", "row_offset": 2, "offset": 1, "value": 250},
            {"sheet": "Summary", "label": "Supplies by Category", "row_offset": 1, "offset": 1, "value": 50}
@@ -184,8 +195,8 @@
            {"sheet": "Dashboard", "label": "Take-Home After Set-Aside", "value": 441.2},
            {"sheet": "Dashboard", "label": "Total Miles Driven", "value": 20000},
            {"sheet": "Dashboard", "label": "Business Use %", "value": 0.01},
-           {"sheet": "Summary", "label": "March", "offset": 6, "value": 677.5},
-           {"sheet": "Summary", "label": "August", "offset": 5, "value": 76}
+           {"sheet": "Summary", "label": "Mar", "offset": 6, "value": 677.5},
+           {"sheet": "Summary", "label": "Aug", "offset": 5, "value": 76}
          ]},
         {"name": "a loss sets nothing aside for tax",
          "inputs": [

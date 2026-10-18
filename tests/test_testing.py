@@ -85,11 +85,12 @@ def test_spec_includes_the_milestone_scenarios(sample_spec):
     assert ("Tax Set-Aside", 0) in expectations  # nothing set aside on a loss
 
 
-def test_spec_v2_is_one_workbook_that_resolves_the_first_rework_brief(sample_spec):
-    assert sample_spec["spec_version"] == 2
+def test_spec_v3_is_one_workbook_that_resolves_both_rework_briefs(sample_spec):
+    assert sample_spec["spec_version"] == 3
     assert [f["name"] for f in sample_spec["files"] if f["kind"] == "xlsx"] == [WORKBOOK]
     assert set(sample_spec["resolves"]) == {"merge_workbooks", "dashboard_charts", "profit_after_mileage",
-                                            "tax_set_aside"}
+                                            "tax_set_aside", "chart_titles_clear", "chart_month_labels",
+                                            "chart_axis_scale", "chart_layout_fits"}
 
 
 # --------------------------------------------------------------------------- broken workbooks

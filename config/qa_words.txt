@@ -10,3 +10,5 @@ onedrive
 paypal
 venmo
 zelle
+# Month abbreviation on chart axes (Jan-Dec); the dictionary knows the others
+sep

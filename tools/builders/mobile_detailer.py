@@ -1,11 +1,14 @@
-"""Builder for "Mobile Auto Detailer Income & Expense Tracker" (spec v2).
+"""Builder for "Mobile Auto Detailer Income & Expense Tracker" (spec v3).
 
 Writes one workbook with tabs, an instructions PDF and a README into an output folder.
-Spec v2 resolves the first rework brief: no double entry (each job is entered once and
+Spec v2 resolved the first rework brief: no double entry (each job is entered once and
 feeds income and customer history; supply purchases count as costs automatically), a
 Dashboard with charts, profit after the mileage deduction and a user-set tax set-aside %.
-Every layout detail the Testing department checks (sheets, headers, charts, scenarios) is
-in the spec; this module must match it.
+Spec v3 fixes how the charts look: titles above the plot, short unrotated month labels, a
+legend clear of the axis, fixed value-axis scales that stay clean on an empty workbook, and
+a layout that fits a 1920 px screen at 100% zoom.
+Every layout detail the Testing and QA departments check (sheets, headers, charts and their
+placement, scenarios) is in the spec; this module reads the chart settings from it.
 """
 
 from __future__ import annotations
@@ -16,14 +19,18 @@ from xml.sax.saxutils import escape
 
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, Reference
+from openpyxl.chart.text import RichText
+from openpyxl.drawing.text import CharacterProperties, ParagraphProperties, RichTextProperties
+from openpyxl.drawing.text import Paragraph as TextParagraph
 from openpyxl.styles import Font
-from openpyxl.utils import quote_sheetname
+from openpyxl.utils import get_column_letter, quote_sheetname
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from tools.chart_xml import px_to_cm
 from tools.spec import parse_date
 from tools.xlsx import (
     BRAND, CURRENCY, DATE, INTEGER, NUMBER, PERCENT, RATE, SUBTITLE_FONT, TITLE_FONT, WRAP, Column, add_validation,
@@ -32,8 +39,7 @@ from tools.xlsx import (
 
 WORKBOOK = "Mobile_Detailer_Business_Tracker.xlsx"
 TITLE = "Mobile Auto Detailer Business Tracker"
-MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
-          "November", "December"]
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]  # chart labels
 NOT_ADVICE = ("This product is a record-keeping tool and is not tax advice. Tax rules change and depend on your "
               "situation; confirm deductions with a qualified tax professional or irs.gov.")
 SET_ASIDE_NOTE = ("The tax set-aside is a savings target, not a tax calculation. Many self-employed people put "
@@ -41,6 +47,8 @@ SET_ASIDE_NOTE = ("The tax set-aside is a savings target, not a tax calculation.
 LIST_LENGTH = 30
 RATE_ROWS = 20
 CHART_COLORS = ("1F4E5A", "E07A2E", "8FB8C4")
+CHART_GRID_COLUMNS = ("D", "S")  # Dashboard columns under the charts, all CHART_GRID_WIDTH wide
+CHART_GRID_WIDTH = 10  # 70 px per column at 96 DPI, 72 logical px at 120 DPI
 
 # Dashboard cells other sheets refer to.
 TAX_YEAR = "Dashboard!$B$5"
@@ -57,14 +65,18 @@ def build(spec: dict, out_dir: Path) -> list[Path]:
     written = []
     for file_spec in spec["files"]:
         path = out_dir / file_spec["name"]
-        writers[file_spec["name"]](params, path)
+        if file_spec["name"] == WORKBOOK:
+            dashboard = next(s for s in file_spec["sheets"] if s["name"] == "Dashboard")
+            tracker_workbook(params, path, dashboard)
+        else:
+            writers[file_spec["name"]](params, path)
         written.append(path)
     return written
 
 
 # --------------------------------------------------------------------------- the workbook
 
-def tracker_workbook(params: dict, path: Path) -> None:
+def tracker_workbook(params: dict, path: Path, dashboard_spec: dict) -> None:
     rows, customer_rows = params["data_rows"], params["customer_rows"]
     wb = Workbook()
     _how_to(wb, params)
@@ -165,7 +177,7 @@ def tracker_workbook(params: dict, path: Path) -> None:
     ], customer_rows)
 
     _summary(summary_ws, params, lists, jobs, expenses, supplies, mileage)
-    _dashboard(dashboard, params, jobs, mileage)
+    _dashboard(dashboard, params, dashboard_spec, jobs, mileage)
     wb.active = 0  # open on "How to Use"
     wb.save(path)
 
@@ -260,7 +272,7 @@ def _category_rollup(ws, first_row: int, first_col: str, list_range: str, amount
                    f'{year_criteria(dates, TAX_YEAR)}))', CURRENCY)
 
 
-def _dashboard(ws, params: dict, jobs, mileage) -> None:
+def _dashboard(ws, params: dict, sheet_spec: dict, jobs, mileage) -> None:
     ws["A1"] = "Detailing Business Dashboard"
     ws["A1"].font = TITLE_FONT
     ws["A2"] = "Type in the yellow cells. Everything else updates from your entries."
@@ -308,41 +320,83 @@ def _dashboard(ws, params: dict, jobs, mileage) -> None:
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 16
     ws.column_dimensions["C"].width = 3
+    first, last = (ord(c) - 64 for c in CHART_GRID_COLUMNS)
+    for index in range(first, last + 1):
+        ws.column_dimensions[get_column_letter(index)].width = CHART_GRID_WIDTH
     ws.sheet_view.showGridLines = False
+
+    # Print and screen layout: everything inside the print area, one landscape page.
+    ws.print_area = sheet_spec["chart_layout"]["print_area"]
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
 
     summary = ws.parent["Summary"]
     months = Reference(summary, min_col=1, min_row=FIRST_MONTH_ROW, max_row=TOTAL_ROW - 1)
-    ws.add_chart(_bar_chart("Income vs Costs by Month", summary, [2, 3, 4], months), "D4")
-    ws.add_chart(_bar_chart("Profit After Mileage by Month", summary, [7], months), "D21")
     category_rows = 1 + len(params["expense_categories"])  # supplies line + each expense category
     categories = Reference(summary, min_col=9, min_row=7, max_row=6 + category_rows)
-    chart = _bar_chart("Costs by Category", summary, [10], categories, first_row=7, last_row=6 + category_rows,
-                       horizontal=True)
-    ws.add_chart(chart, "M4")
+    sources = {
+        "Income vs Costs by Month": ([2, 3, 4], months, FIRST_MONTH_ROW, TOTAL_ROW - 1),
+        "Profit After Mileage by Month": ([7], months, FIRST_MONTH_ROW, TOTAL_ROW - 1),
+        "Costs by Category": ([10], categories, 7, 6 + category_rows),
+    }
+    for chart_spec in sheet_spec["charts"]:
+        columns, cats, first_row, last_row = sources[chart_spec["title"]]
+        ws.add_chart(_bar_chart(chart_spec, summary, columns, cats, first_row, last_row), chart_spec["anchor"])
 
 
-def _bar_chart(title: str, sheet, columns: list[int], categories: Reference, *, first_row: int = FIRST_MONTH_ROW,
-               last_row: int = TOTAL_ROW - 1, horizontal: bool = False) -> BarChart:
-    """A plain clustered bar/column chart: the chart types Excel and Google Sheets both import cleanly."""
+def _text_properties(size: int, *, bold: bool = False, rotation: int | None = None) -> RichText:
+    """Font size (hundredths of a point), weight and an explicit label angle (0 = horizontal, never auto)."""
+    body = RichTextProperties(rot=rotation, vert="horz") if rotation is not None else RichTextProperties()
+    font = CharacterProperties(sz=size, b=bold)
+    return RichText(bodyPr=body, p=[TextParagraph(pPr=ParagraphProperties(defRPr=font), endParaRPr=font)])
+
+
+def _bar_chart(chart_spec: dict, sheet, columns: list[int], categories: Reference, first_row: int,
+               last_row: int) -> BarChart:
+    """A plain clustered bar/column chart: the chart types Excel and Google Sheets both import cleanly.
+
+    The title sits above the plot (overlay off), category labels are horizontal, the legend
+    (if any) goes where the spec puts it, and the value axis has a fixed minimum, major unit
+    and number format, so an empty workbook shows clean labels ($0, $1,000) instead of
+    $0 $0 $1 $1. The fixed step suits a one-person business; the PDF tells buyers with much
+    bigger months how to raise it.
+    """
+    horizontal = chart_spec.get("horizontal", False)
+    value_axis = chart_spec["value_axis"]
     chart = BarChart()
     chart.type = "bar" if horizontal else "col"
     chart.grouping = "clustered"
-    chart.title = title
     chart.style = 10
-    chart.height, chart.width = 8.5, 17
+    chart.title = chart_spec["title"]
+    chart.title.overlay = False
+    chart.width, chart.height = px_to_cm(chart_spec["width_px"]), px_to_cm(chart_spec["height_px"])
     for col in columns:
         chart.add_data(Reference(sheet, min_col=col, min_row=first_row - 1, max_row=last_row), titles_from_data=True)
     chart.set_categories(categories)
     for series, color in zip(chart.series, CHART_COLORS):
         series.graphicalProperties.solidFill = color
         series.graphicalProperties.line.solidFill = color
-    chart.y_axis.numFmt = '"$"#,##0'
-    chart.x_axis.delete = False
-    chart.y_axis.delete = False
-    if len(columns) == 1:
-        chart.legend = None
+        series.invertIfNegative = False  # a loss month keeps its colour instead of turning white
+
+    category, value = chart.x_axis, chart.y_axis
+    category.delete = value.delete = False
+    category.axPos, value.axPos = ("l", "b") if horizontal else ("b", "l")
+    category.txPr = _text_properties(900, rotation=0)
+    value.txPr = _text_properties(900, rotation=0)
+    category.tickLblPos = "low"  # labels stay at the edge even when a value is negative
+    if horizontal:
+        category.scaling.orientation = "maxMin"  # first category at the top, as on the Summary tab
+        value.crosses = "max"  # ...which keeps the value axis at the bottom
+    if "min" in value_axis:
+        value.scaling.min = value_axis["min"]
+    value.majorUnit = value_axis["major_unit"]
+    value.numFmt = value_axis["num_fmt"]
+    if chart_spec.get("legend"):
+        chart.legend.position = chart_spec["legend"]
+        chart.legend.overlay = False  # Excel overlays a legend whose overlay element is missing
     else:
-        chart.legend.position = "b"
+        chart.legend = None
     return chart
 
 
@@ -444,6 +498,9 @@ def instructions_pdf(params: dict, path: Path) -> None:
          "Set-Aside</b> amount, take-home after the set-aside, jobs completed and unpaid balances. The three "
          "charts show income against costs by month, profit after mileage by month, and costs by category.")
     para("Nothing is set aside when profit after mileage is zero or negative. " + escape(SET_ASIDE_NOTE))
+    para("The chart axes count up in steps of $1,000. If your months run well above $15,000 and the axis labels "
+         "look crowded, right-click the numbers on the axis, choose <b>Format Axis</b> and raise the "
+         "<b>Major</b> unit (for example to 5000).")
 
     heading("Jobs and Customers")
     para("Add each customer once on the <b>Customers</b> tab. Then record every job on the <b>Jobs</b> tab, "

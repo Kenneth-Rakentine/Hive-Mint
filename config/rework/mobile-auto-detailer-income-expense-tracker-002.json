@@ -1,0 +1,35 @@
+{
+  "summary": "Dashboard charts look broken in Excel: titles over the plot, duplicate $0/$1 axis labels on an empty workbook, rotated month labels running into the legend, and charts overlapping each other.",
+  "required_changes": [
+    {
+      "id": "chart_titles_clear",
+      "change": "Chart titles sit above the plot area (title overlay off), never on top of the bars or gridlines.",
+      "reason": "A title printed over the gridlines looks broken in listing images and on the buyer's screen.",
+      "acceptance": "Every chart's XML has <c:overlay val=\"0\"/> on its title; the rendered PNG shows the title clear of the plot."
+    },
+    {
+      "id": "chart_month_labels",
+      "change": "Month axes use Jan-Dec labels with no rotation, and the legend sits where it cannot collide with axis labels.",
+      "reason": "Rotated full month names collide with the bottom legend and December is clipped.",
+      "acceptance": "Month-axis labels are 3 characters or fewer, label rotation is 0, and no legend is at the bottom."
+    },
+    {
+      "id": "chart_axis_scale",
+      "change": "Value axes have a fixed minimum (0, unless the chart must show losses), a fixed major unit and a currency number format.",
+      "reason": "On an empty workbook Excel auto-scales to 0-1 and shows $0 $0 $1 $1, which looks like a bug.",
+      "acceptance": "Every value axis has majorUnit and numFmt set (and min, unless the spec allows negatives); the empty template renders $0, $500, ..."
+    },
+    {
+      "id": "chart_layout_fits",
+      "change": "Size and place the charts so none overlap and all fit at 100% zoom on a 1920 px screen, inside the Dashboard print area.",
+      "reason": "Chart 1 ran into chart 3, and the Dashboard needed sideways scrolling.",
+      "acceptance": "Chart anchors do not overlap, every chart lies inside the print area, and the right edge is at most 1840 px."
+    }
+  ],
+  "findings": [
+    {"severity": "major", "category": "refund_risk", "issue": "Chart titles overlap the plot area and gridlines."},
+    {"severity": "major", "category": "refund_risk", "issue": "Empty-data value axes show duplicate labels ($0 $0 $1 $1) on all three charts."},
+    {"severity": "major", "category": "refund_risk", "issue": "Rotated month labels collide with the legend; December is clipped."},
+    {"severity": "major", "category": "refund_risk", "issue": "Charts overflow their area and overlap each other."}
+  ]
+}
