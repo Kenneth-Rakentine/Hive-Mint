@@ -1,5 +1,5 @@
 """Command line: python -m app.cli {init-db,demo,run,status,rework,resume,approve-rework,review-export,
-review-import,research,spec-check,shift,report,review,approve,reject,relist}"""
+review-import,research,spec-check,shift,report,review,approve,reject,relist,office}"""
 
 from __future__ import annotations
 
@@ -460,6 +460,21 @@ def cmd_relist(args) -> int:
     return code
 
 
+def cmd_office(args) -> int:
+    """Serve the pixel office on this computer only and open it in the browser. Ctrl+C stops it."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    url = f"http://127.0.0.1:{args.port}/"
+    console.print(f"The office is at [bold]{url}[/bold] (only this computer can see it). Press Ctrl+C to close it.")
+    if not args.no_browser:
+        threading.Timer(1.5, webbrowser.open, args=(url,)).start()
+    uvicorn.run("app.api:app", host="127.0.0.1", port=args.port, log_level="warning")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="Hive-Mint command line")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -518,6 +533,10 @@ def main(argv: list[str] | None = None) -> int:
     relist_cmd.add_argument("--reason", default="")
     relist_cmd.add_argument("--actor", default="owner")
     relist_cmd.set_defaults(func=cmd_relist)
+    office = commands.add_parser("office", help="open the pixel office in your browser (http://127.0.0.1:8000)")
+    office.add_argument("--port", type=int, default=8000)
+    office.add_argument("--no-browser", action="store_true")
+    office.set_defaults(func=cmd_office)
     args = parser.parse_args(argv)
     return args.func(args)
 

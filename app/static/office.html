@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hive-Mint Office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --loam: #2a1f16;      /* frame, darkest wood */
+    --bark: #5c4128;      /* bevel */
+    --bark-hi: #8a6640;   /* bevel highlight */
+    --honey: #e8b33a;     /* gold text, resources */
+    --mint: #86c99a;      /* light field */
+    --field: #3f8a60;     /* dark field */
+    --parchment: #eadab2; /* readable text on dark */
+    --ink: #2a1f16;
+    --alarm: #c2412b;
+    --ok: #9fdc6a;
+    --gap: 10px;
+    --font: "Pixelify Sans", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--loam);
+    color: var(--parchment);
+    font-family: var(--font);
+    font-size: 16px;
+    line-height: 1.35;
+    min-height: 100vh;
+  }
+  /* Bevelled wooden frame, the one piece of chrome every panel shares. */
+  .frame {
+    background: #3b2c1f;
+    border: 3px solid var(--bark);
+    box-shadow: inset 2px 2px 0 var(--bark-hi), inset -2px -2px 0 #1b140e;
+    padding: 10px 12px;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-rows: auto minmax(0, 1fr) 190px;
+    grid-template-areas: "hud hud" "map panel" "log panel";
+    gap: var(--gap);
+    padding: var(--gap);
+    height: 100vh;
+  }
+  .hud { grid-area: hud; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 26px; }
+  .hud h1 { margin: 0 12px 0 0; font-size: 26px; font-weight: 700; color: var(--honey); letter-spacing: .5px; }
+  .res { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+  .res b { color: var(--honey); font-weight: 600; font-size: 19px; }
+  .res span { color: #c9b98f; font-size: 14px; }
+  .res.alert b { color: var(--alarm); }
+  .shift { margin-left: auto; font-size: 14px; color: #c9b98f; }
+  .shift .dot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; background: #6d6152; }
+  .shift.on .dot { background: var(--ok); }
+
+  .map { grid-area: map; position: relative; padding: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .stage { position: relative; aspect-ratio: 16 / 9; width: 100%; max-height: 100%; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+  .bld {
+    position: absolute; transform: translate(-50%, 0);
+    font: 600 13px/1.1 var(--font); color: var(--parchment);
+    background: rgba(42, 31, 22, .86); border: 2px solid var(--bark); padding: 2px 6px 3px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .bld .n { color: var(--honey); margin-left: 4px; }
+  .bld[aria-pressed="true"] { border-color: var(--honey); color: var(--honey); }
+  .bld:focus-visible, button:focus-visible { outline: 3px solid var(--honey); outline-offset: 2px; }
+  .bld.busy::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--ok); margin-right: 5px; vertical-align: 1px; }
+  .bld.hurt { border-color: var(--alarm); }
+
+  .panel { grid-area: panel; overflow: auto; }
+  .panel h2 { margin: 0 0 2px; font-size: 22px; color: var(--honey); font-weight: 700; }
+  .panel .sub { margin: 0 0 12px; color: #c9b98f; font-size: 14px; }
+  .panel h3 { margin: 14px 0 6px; font-size: 15px; font-weight: 600; color: var(--parchment); border-bottom: 2px solid var(--bark); padding-bottom: 3px; }
+  .panel ul { list-style: none; margin: 0; padding: 0; }
+  .panel li { margin: 0 0 9px; font-size: 14px; }
+  .panel li .t { color: var(--parchment); font-weight: 600; }
+  .panel li .r { color: #c9b98f; display: block; }
+  .panel li .e { color: #f0937f; display: block; }
+  .panel code { font-family: var(--font); color: var(--honey); background: #241a12; padding: 1px 4px; user-select: all; }
+  .empty { color: #a8987a; font-size: 14px; }
+
+  .log { grid-area: log; overflow: auto; font-size: 14px; }
+  .log ol { list-style: none; margin: 0; padding: 0; }
+  .log li { display: grid; grid-template-columns: 74px 120px 1fr; gap: 10px; padding: 2px 0; border-bottom: 1px solid #3f3022; }
+  .log time { color: #a8987a; }
+  .log .who { color: var(--honey); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log .what { color: var(--parchment); }
+  .log .bad { color: #f0937f; }
+  .offline { color: var(--alarm); }
+
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; grid-template-areas: "hud" "map" "panel" "log"; height: auto; }
+    .map { min-height: 0; overflow-x: auto; justify-content: flex-start; }
+    .stage { min-width: 680px; }  /* scroll the map sideways rather than crush the labels */
+    .panel, .log { max-height: 340px; }
+    .shift { margin-left: 0; }
+    .log li { grid-template-columns: 70px 1fr; }
+    .log .what { grid-column: 1 / -1; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="hud frame" aria-label="Company resources">
+    <h1>Hive-Mint</h1>
+    <div class="res" title="Sales revenue. Tracking starts once products are listed."><b id="r-gold">$0.00</b><span>gold</span></div>
+    <div class="res" id="r-mana-wrap" title="Claude runs used today, out of the daily cap. Covered by your Max plan."><b id="r-mana">0/15</b><span>Claude runs today</span></div>
+    <div class="res" title="Products in the company, in any state"><b id="r-products">0</b><span>products</span></div>
+    <div class="res" id="r-wait-wrap" title="Products waiting for your decision in the Keep"><b id="r-wait">0</b><span>waiting for you</span></div>
+    <div class="res" title="Free disk space, and what Hive-Mint itself takes"><b id="r-disk">–</b><span id="r-disk-label">free</span></div>
+    <div class="shift" id="shift"><span class="dot"></span><span id="shift-text">Loading…</span></div>
+  </header>
+
+  <main class="map frame" aria-label="Office map">
+    <div class="stage" id="stage">
+      <canvas id="canvas" width="320" height="180" aria-hidden="true"></canvas>
+    </div>
+  </main>
+
+  <aside class="panel frame" id="panel" aria-live="polite">
+    <h2>Your company</h2>
+    <p class="sub">Each building is a department. Crates are products; they move down the road as they pass each gate. Workers appear only while a job is really running or waiting.</p>
+    <p class="empty">Select a building to see what is there.</p>
+  </aside>
+
+  <section class="log frame" aria-label="Message log">
+    <ol id="log"></ol>
+  </section>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const W = 320, H = 180;
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  const stage = document.getElementById("stage");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Door positions on the 320x180 map, in pipeline order along an S-shaped road.
+  const LAYOUT = {
+    research:   { x: 34,  y: 40,  roof: "#4f6db0", kind: "hall" },
+    finance:    { x: 96,  y: 40,  roof: "#c99a2e", kind: "vault" },
+    design:     { x: 158, y: 40,  roof: "#6a8fb5", kind: "house" },
+    production: { x: 220, y: 40,  roof: "#9c5b34", kind: "forge" },
+    testing:    { x: 282, y: 40,  roof: "#5aa0a0", kind: "lab" },
+    qa:         { x: 282, y: 104, roof: "#7d6bb0", kind: "house" },
+    red_team:   { x: 220, y: 104, roof: "#b8432f", kind: "tower" },
+    compliance: { x: 158, y: 104, roof: "#8a8a8a", kind: "court" },
+    seo:        { x: 96,  y: 104, roof: "#d9734a", kind: "stall" },
+    keep:       { x: 34,  y: 104, roof: "#e8b33a", kind: "keep" },
+    store:      { x: 34,  y: 160, roof: "#3f9a6a", kind: "stall" },
+    infirmary:  { x: 220, y: 160, roof: "#d8d0c0", kind: "house" },
+    graveyard:  { x: 282, y: 160, roof: "#555",    kind: "grave" },
+  };
+  const ORDER = Object.keys(LAYOUT);
+
+  // ---------------------------------------------------------------- the land (static, seeded)
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const ground = document.createElement("canvas");
+  ground.width = W; ground.height = H;
+  (function paintGround() {
+    const g = ground.getContext("2d");
+    g.fillStyle = "#4f9a6b"; g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 2600; i++) {
+      g.fillStyle = rnd() < .5 ? "#5aa877" : "#468c60";
+      g.fillRect((rnd() * W) | 0, (rnd() * H) | 0, 1, 1);
+    }
+    // Road: across the top row, down the right side, back along the middle row, down to the store.
+    const road = (x, y, w, h) => { g.fillStyle = "#a88a5c"; g.fillRect(x, y, w, h);
+      g.fillStyle = "#97794e"; for (let i = 0; i < w * h / 6; i++) g.fillRect(x + ((rnd() * w) | 0), y + ((rnd() * h) | 0), 1, 1); };
+    road(26, 52, 270, 6); road(290, 52, 6, 64); road(26, 116, 270, 6); road(26, 116, 6, 50);
+    road(26, 166, 270, 5); road(290, 116, 6, 55);
+    // A stream and trees around the edges.
+    g.fillStyle = "#4a7fb0"; for (let x = 0; x < W; x++) g.fillRect(x, 4 + Math.round(Math.sin(x / 9) * 1.5), 1, 3);
+    for (let i = 0; i < 26; i++) {
+      const x = (rnd() * W) | 0, y = 70 + ((rnd() * 22) | 0);
+      if (Math.abs(y - 80) < 3) continue;
+      tree(g, x, y);
+    }
+    for (let i = 0; i < 14; i++) tree(g, (rnd() * W) | 0, 132 + ((rnd() * 18) | 0));
+  })();
+  function tree(g, x, y) {
+    g.fillStyle = "#5c3d22"; g.fillRect(x, y + 4, 1, 3);
+    g.fillStyle = "#2f6e47"; g.fillRect(x - 2, y, 5, 4); g.fillRect(x - 1, y - 2, 3, 2);
+    g.fillStyle = "#3d8558"; g.fillRect(x - 1, y, 2, 2);
+  }
+
+  // ---------------------------------------------------------------- buildings
+  function building(b, hurt) {
+    const { x, y, roof, kind } = LAYOUT[b];
+    const L = x - 14, T = y - 22;
+    const wall = "#c9b48a", shade = "#9c8762", dark = "#2a1f16";
+    const box = (c, X, Y, w, h) => { ctx.fillStyle = c; ctx.fillRect(X, Y, w, h); };
+    if (kind === "grave") {
+      for (const [dx, dy] of [[-10, -6], [-2, -9], [6, -5], [-6, 2], [3, 0]]) {
+        box("#8b8b8b", x + dx, y + dy - 5, 4, 6); box("#6d6d6d", x + dx + 3, y + dy - 5, 1, 6); box("#3a3a3a", x + dx + 1, y + dy - 3, 2, 1);
+      }
+      return;
+    }
+    if (kind === "stall") {
+      box(shade, L + 2, T + 12, 24, 10); box(wall, L + 2, T + 12, 22, 9);
+      for (let i = 0; i < 7; i++) box(i % 2 ? "#f2e6c8" : roof, L + i * 4, T + 6, 4, 6);
+      box(dark, L, T + 12, 28, 1); box("#6b4a2c", L + 1, T + 13, 1, 9); box("#6b4a2c", L + 26, T + 13, 1, 9);
+      return;
+    }
+    const tall = kind === "tower" ? 10 : kind === "keep" ? 4 : 0;
+    // walls
+    box(shade, L, T + 8 - tall, 28, 15 + tall); box(wall, L, T + 8 - tall, 26, 14 + tall);
+    // roof
+    if (kind === "keep" || kind === "tower") {
+      box(roof, L - 1, T + 4 - tall, 30, 5);
+      for (let i = 0; i < 8; i++) if (i % 2 === 0) box(roof, L - 1 + i * 4, T + 1 - tall, 3, 3);
+    } else {
+      for (let r = 0; r < 7; r++) box(roof, L - 2 + r, T + 2 + r - tall - (kind === "vault" ? 0 : 0), 32 - r * 2, 1);
+      box(dark, L - 2, T + 8 - tall, 32, 1);
+    }
+    // door and windows
+    box(dark, x - 2, y - 6, 5, 6); box("#7a5634", x - 1, y - 5, 3, 5);
+    box("#f2d27a", L + 4, T + 12 - tall / 2, 3, 3); box("#f2d27a", L + 20, T + 12 - tall / 2, 3, 3);
+    // emblem
+    const e = { vault: "#ffd84a", forge: "#ff8a3a", lab: "#bff2ff", court: "#ffffff", hall: "#d7e2ff" }[kind];
+    if (e) box(e, x - 1, T + 4 - tall, 3, 2);
+    if (kind === "forge") { box("#555", L + 22, T - 2, 3, 6); }
+    if (hurt) { box("#c2412b", L + 24, T - tall, 4, 4); box("#fff", L + 25, T + 1 - tall, 2, 1); }
+  }
+
+  // ---------------------------------------------------------------- units
+  function worker(x, y, working, frame, tint) {
+    const box = (c, X, Y, w, h) => { ctx.fillStyle = c; ctx.fillRect(X, Y, w, h); };
+    box("#f0c8a0", x, y, 3, 3);                // head
+    box(tint || "#3b6fb5", x - 1, y + 3, 5, 4); // tunic
+    box("#5c3d22", x, y + 7, 1, 2); box("#5c3d22", x + 2, y + 7, 1, 2);
+    if (working) {                              // hammer swings only while a job is RUNNING
+      const up = frame % 2 === 0;
+      box("#8a6640", x + 4, up ? y : y + 3, 1, 4);
+      box("#bbbbbb", x + 3, up ? y - 1 : y + 6, 3, 2);
+    }
+  }
+  function crate(x, y, color) {
+    ctx.fillStyle = "#3a2716"; ctx.fillRect(x, y, 6, 6);
+    ctx.fillStyle = color || "#c08a4a"; ctx.fillRect(x + 1, y + 1, 4, 4);
+    ctx.fillStyle = "#3a2716"; ctx.fillRect(x + 1, y + 3, 4, 1);
+  }
+  const CRATE = { HUMAN_REVIEW: "#e8b33a", READY_TO_PUBLISH: "#9fdc6a", ERROR: "#c2412b", PAUSED: "#b9b9b9", REWORK: "#e07a3a" };
+
+  // ---------------------------------------------------------------- state and drawing
+  let state = null, selected = null, frame = 0;
+  let moving = []; // {id, from:{x,y}, to:{x,y}, start}
+  let lastHome = {};
+
+  function homeOf(product) {
+    for (const b of state.buildings) if (b.products.some(p => p.id === product)) return b.id;
+    return null;
+  }
+
+  function draw(now) {
+    ctx.drawImage(ground, 0, 0);
+    if (!state) return;
+    for (const b of state.buildings) {
+      const hurt = b.paused.length > 0 || b.products.some(p => p.status === "ERROR");
+      building(b.id, hurt);
+    }
+    for (const b of state.buildings) {
+      const { x, y } = LAYOUT[b.id];
+      // Workers: one per RUNNING job at the door, QUEUED ones lined up beside it.
+      b.running.slice(0, 2).forEach((j, i) => worker(x + 6 + i * 6, y - 8, true, frame));
+      b.queued.slice(0, 4).forEach((j, i) => worker(x - 12 - i * 6, y - 8, false, frame, "#7a6a50"));
+      // Crates: up to three per building, the rest summed in the label.
+      b.products.slice(0, 3).forEach((p, i) => {
+        if (moving.some(m => m.id === p.id)) return;
+        crate(x - 9 + i * 7, y + 1, CRATE[p.status]);
+      });
+    }
+    // Crates that changed building since the last poll travel there (a real transition, not a simulation).
+    moving = moving.filter(m => {
+      const t = Math.min(1, (now - m.start) / 1200);
+      crate(Math.round(m.from.x + (m.to.x - m.from.x) * t) - 9, Math.round(m.from.y + (m.to.y - m.from.y) * t) + 1, "#e8b33a");
+      return t < 1;
+    });
+    if (selected) {
+      const { x, y } = LAYOUT[selected];
+      ctx.strokeStyle = "#e8b33a"; ctx.lineWidth = 1;
+      ctx.strokeRect(x - 17.5, y - 27.5, 35, 36);
+    }
+  }
+
+  function loop(now) {
+    draw(now);
+    requestAnimationFrame(loop);
+  }
+  if (!reduced) setInterval(() => { frame++; }, 380);
+
+  // ---------------------------------------------------------------- DOM: labels, HUD, panel, log
+  const labels = {};
+  function placeLabels() {
+    for (const id of ORDER) {
+      if (!labels[id]) {
+        const btn = document.createElement("button");
+        btn.className = "bld";
+        btn.type = "button";
+        btn.setAttribute("aria-pressed", "false");
+        btn.addEventListener("click", () => select(id));
+        stage.appendChild(btn);
+        labels[id] = btn;
+      }
+      const { x, y } = LAYOUT[id];
+      labels[id].style.left = (x / W * 100) + "%";
+      labels[id].style.top = ((y + 9) / H * 100) + "%";
+    }
+  }
+
+  function fmtTime(iso) {
+    const d = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z");
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  function render() {
+    const r = state.resources;
+    document.getElementById("r-gold").textContent = "$" + r.revenue_usd.toFixed(2);
+    document.getElementById("r-mana").textContent = `${r.claude_runs_today}/${r.claude_runs_cap}`;
+    document.getElementById("r-mana-wrap").classList.toggle("alert", r.claude_runs_today >= r.claude_runs_cap);
+    document.getElementById("r-products").textContent = r.products;
+    document.getElementById("r-wait").textContent = r.waiting_for_you;
+    document.getElementById("r-wait-wrap").classList.toggle("alert", r.waiting_for_you > 0);
+    document.getElementById("r-disk").textContent = r.disk_free_gb == null ? "–" : `${Math.round(r.disk_free_gb)} GB`;
+    document.getElementById("r-disk-label").textContent = r.hivemint_gb == null ? "free" : `free (Hive-Mint uses ${r.hivemint_gb} GB)`;
+
+    const sh = state.shift, box = document.getElementById("shift"), txt = document.getElementById("shift-text");
+    box.classList.toggle("on", !!(sh && sh.running));
+    txt.textContent = !sh ? "No shift has run yet. The first starts at 1 PM."
+      : sh.running ? `Shift running since ${fmtTime(sh.started_at)}`
+      : `Off shift. Last shift ended ${fmtTime(sh.ended_at)}${sh.stop_reason ? ": " + sh.stop_reason : ""}`;
+
+    for (const b of state.buildings) {
+      const btn = labels[b.id];
+      const count = b.products.length;
+      btn.innerHTML = `${esc(b.name)}${count ? `<span class="n">${count}</span>` : ""}`;
+      btn.classList.toggle("busy", b.running.length > 0);
+      btn.classList.toggle("hurt", b.paused.length > 0 || b.products.some(p => p.status === "ERROR"));
+      btn.setAttribute("aria-label", `${b.name}: ${count} product${count === 1 ? "" : "s"}, ${b.running.length} working, ${b.queued.length} waiting`);
+    }
+
+    const log = document.getElementById("log");
+    log.innerHTML = state.events.map(e => {
+      const bad = /failed|error|refused|rejected/i.test(e.type + " " + (e.to || ""));
+      const what = (e.product ? `${e.product}: ` : "") + e.message;
+      return `<li><time>${fmtTime(e.at)}</time><span class="who">${esc(e.actor)}</span><span class="what${bad ? " bad" : ""}">${esc(what)}</span></li>`;
+    }).join("") || `<li><span></span><span></span><span class="what">Nothing has happened yet. Activity appears here as the hive works.</span></li>`;
+
+    if (selected) showPanel(selected);
+  }
+
+  function select(id) {
+    selected = selected === id ? null : id;
+    for (const [k, btn] of Object.entries(labels)) btn.setAttribute("aria-pressed", String(k === selected));
+    if (selected) showPanel(selected); else resetPanel();
+  }
+  function resetPanel() {
+    document.getElementById("panel").innerHTML = `<h2>Your company</h2><p class="sub">Each building is a department. Crates are products; they move down the road as they pass each gate. Workers appear only while a job is really running or waiting.</p><p class="empty">Select a building to see what is there.</p>`;
+  }
+
+  const HINTS = {
+    keep: id => `Review it: <code>python -m app.cli review ${id}</code>`,
+    infirmary: id => `Fix the cause, then: <code>python -m app.cli resume ${id}</code>`,
+  };
+  function showPanel(id) {
+    const b = state.buildings.find(x => x.id === id);
+    if (!b) return;
+    const product = p => {
+      let extra = "";
+      if (p.listing) extra += `<span class="r">Listing: $${p.listing.price.toFixed(2)}, ${p.listing.images} images. ${esc(p.listing.path)}</span>`;
+      if (HINTS[id]) extra += `<span class="r">${HINTS[id](p.id)}</span>`;
+      return `<li><span class="t">#${p.id} ${esc(p.name)}</span><span class="r">${esc(p.status)}${p.reworks ? `, ${p.reworks} rework${p.reworks === 1 ? "" : "s"}` : ""}: ${esc(p.reason)}</span>${extra}</li>`;
+    };
+    const job = j => `<li><span class="t">Job #${j.id} ${esc(j.type.replace(/_/g, " "))}</span><span class="r">Product #${j.product_id ?? "–"}, attempt ${j.attempts}</span>${j.error ? `<span class="e">${esc(j.error)}</span>` : ""}</li>`;
+    const section = (title, items, fn, empty) => `<h3>${title}</h3>` + (items.length ? `<ul>${items.map(fn).join("")}</ul>` : `<p class="empty">${empty}</p>`);
+    const dept = b.department ? `Department: ${b.department.replace(/_/g, " ").toLowerCase()}. ` : "";
+    document.getElementById("panel").innerHTML =
+      `<h2>${esc(b.name)}</h2><p class="sub">${dept}Holds products at ${b.statuses.map(s => s.replace(/_/g, " ").toLowerCase()).join(", ")}.</p>` +
+      section("Products here", b.products, product, "No products here right now.") +
+      (b.department ? section("Working now", b.running, job, "Nobody is working here right now.") +
+        section("Waiting in line", b.queued, job, "No jobs waiting.") +
+        (b.paused.length ? section("Held", b.paused, job, "") : "") : "");
+  }
+
+  // ---------------------------------------------------------------- polling
+  let timer = null;
+  async function poll() {
+    try {
+      const res = await fetch("/office/state", { cache: "no-store" });
+      if (!res.ok) throw new Error(res.status);
+      const next = await res.json();
+      if (state && !reduced) {
+        const before = lastHome;
+        state = next;
+        for (const b of state.buildings) for (const p of b.products) {
+          if (before[p.id] && before[p.id] !== b.id) {
+            const a = LAYOUT[before[p.id]], z = LAYOUT[b.id];
+            moving.push({ id: p.id, from: { x: a.x, y: a.y }, to: { x: z.x, y: z.y }, start: performance.now() });
+          }
+        }
+      } else state = next;
+      lastHome = {};
+      for (const b of state.buildings) for (const p of b.products) lastHome[p.id] = b.id;
+      render();
+    } catch (err) {
+      document.getElementById("shift-text").innerHTML = `<span class="offline">Can't reach Hive-Mint. Start it with python -m app.cli office.</span>`;
+    }
+  }
+  function schedule() {
+    clearInterval(timer);
+    if (!document.hidden) { poll(); timer = setInterval(poll, 5000); }
+  }
+  document.addEventListener("visibilitychange", schedule);
+  placeLabels();
+  schedule();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
