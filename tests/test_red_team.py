@@ -191,3 +191,53 @@ def test_human_rework_at_red_team_cancels_the_waiting_red_team_job(session, sett
 def test_reviews_folder_is_gitignored():
     assert "research/reviews/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert red_team.REVIEWS_DIR == ROOT / "research" / "reviews"
+
+
+# --------------------------------------------------------------------------- headless (shift)
+
+def _writes_verdict(tmp_path, product, decision="PASS", bad=False):
+    def reply(cmd, prompt):
+        assert "running headless" in prompt and "Make the strongest fair case" in prompt  # the /hive-review text
+        assert f"product **{product.id}**" in prompt and "$ARGUMENTS" not in prompt
+        data = json.loads(_verdict(product, decision).model_dump_json())
+        if bad:
+            data["build_version"] = 99
+        path = tmp_path / "reviews" / str(product.id) / "verdict.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return {"result": f"{decision}: done"}
+
+    return reply
+
+
+def test_headless_red_team_follows_hive_review_and_imports_the_verdict(session, settings, at_red_team, fake_claude,
+                                                                       tmp_path):
+    fake_claude.replies = [_writes_verdict(tmp_path, at_red_team, "REWORK")]
+    review = red_team.run_headless(session, settings, at_red_team, base=tmp_path / "reviews")
+    assert review.decision == "REWORK" and at_red_team.status == S.REWORK
+    assert session.scalar(select(ReworkBrief)).change_ids == ["merge_workbooks"]
+    cmd = fake_claude.calls[0][0]
+    assert cmd[cmd.index("--tools") + 1] == "Read,Glob,Grep,Write"  # no Bash: Python imports the verdict
+    providers = [r.provider for r in session.scalars(select(AgentRun))]
+    assert "claude-headless" in providers and "claude-code" in providers
+
+
+def test_headless_red_team_retries_a_bad_verdict_then_gives_up(session, settings, at_red_team, fake_claude, tmp_path):
+    fake_claude.replies = [_writes_verdict(tmp_path, at_red_team, bad=True), {"result": "forgot to write it"},
+                           _writes_verdict(tmp_path, at_red_team, bad=True)]
+    assert red_team.run_headless(session, settings, at_red_team, base=tmp_path / "reviews") is None
+    assert at_red_team.status == S.ERROR and len(fake_claude.calls) == 3
+    assert "build v99" in fake_claude.calls[1][1]  # the problem was passed to the next attempt
+    job = session.scalar(select(Job).where(Job.department == Department.RED_TEAM))
+    assert job.status == JobStatus.FAILED
+
+
+def test_headless_red_team_hard_stop_leaves_the_job_queued(session, settings, at_red_team, fake_claude, tmp_path,
+                                                          monkeypatch):
+    from app.lifecycle import LimitReached
+
+    monkeypatch.setattr("providers.claude_headless.headless_runs_today", lambda s, st: 999)
+    with pytest.raises(LimitReached):
+        red_team.run_headless(session, settings, at_red_team, base=tmp_path / "reviews")
+    job = session.scalar(select(Job).where(Job.department == Department.RED_TEAM))
+    assert job.status == JobStatus.QUEUED and job.attempts == 0 and at_red_team.status == S.RED_TEAM
