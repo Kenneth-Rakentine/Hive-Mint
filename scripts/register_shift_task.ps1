@@ -1,5 +1,6 @@
 # Registers the Windows Task Scheduler task "\HiveMint\HiveMint Shift": runs scripts\run_shift.ps1 daily
-# at 1:00 PM, wakes the computer to run it, never starts on battery (and stops if it switches to battery),
+# at 1:00 PM, wakes the computer to run it, never starts on battery (and stops if it switches to battery;
+# both are New-ScheduledTaskSettingsSet defaults, so no switch is passed for them),
 # and is stopped by Task Scheduler after 9 hours (10:00 PM for an on-time start). The shift itself also
 # stops starting new steps at SHIFT_END (22:00), finishing the step that is running.
 #
@@ -14,8 +15,8 @@ $taskPath = "\HiveMint\"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $repo `
     -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$runner`""
 $trigger = New-ScheduledTaskTrigger -Daily -At "1:00PM"
-$settings = New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable -DisallowStartIfOnBatteries `
-    -StopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 9) -MultipleInstances IgnoreNew
+$settings = New-ScheduledTaskSettingsSet -WakeToRun -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 9) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 
 Register-ScheduledTask -TaskName $taskName -TaskPath $taskPath -Action $action -Trigger $trigger `
