@@ -204,11 +204,11 @@ def test_hard_stop_requeues_without_using_an_attempt(session, settings, make_pro
     assert job.status == JobStatus.SUCCEEDED and job.attempts == 1
 
 
-def test_tick_can_be_limited_to_one_department(session, settings, make_product):
+def test_tick_can_be_limited_to_one_gate(session, settings, make_product):
     ops = OperationsManager(session, settings, handlers=STUB_HANDLERS)
     idea = make_product()
     finance = advance_to(session, settings, make_product(), S.FINANCE_REVIEW)
-    assert ops.tick(departments={Department.FINANCE}) == 1
+    assert ops.tick(statuses={S.FINANCE_REVIEW}) == 1
     assert finance.status == S.SPECIFICATION and idea.status == S.IDEA
 
 

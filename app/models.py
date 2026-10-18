@@ -278,3 +278,4 @@ class Shift(Base):
     steps_json: Mapped[str] = mapped_column(Text, default="[]")  # [{step, ran, summary}]
     claude_runs: Mapped[int] = mapped_column(Integer, default=0)
     errors_json: Mapped[str] = mapped_column(Text, default="[]")
+    summary_json: Mapped[str] = mapped_column(Text, default="{}")  # Claude runs today vs cap, disk usage

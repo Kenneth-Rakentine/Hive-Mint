@@ -14,12 +14,14 @@ import time
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from agents.compliance import compliance_gate
 from agents.departments import STUB_HANDLERS, Handler, StageResult
 from agents.finance import finance_gate
 from agents.production import Production
 from agents.qa import QA
 from agents.red_team import RedTeam
 from agents.research import research_gate
+from agents.spec_writer import ProductDesign
 from agents.rework import active_brief, brief_payload
 from agents.testing import Testing
 from app.db import utcnow
@@ -80,10 +82,12 @@ ACTOR = "operations"
 
 
 def default_handlers(settings: Settings) -> dict[Department, Handler]:
-    """Real Research and Finance gates, Production, Testing, QA and Red Team (external); the rest are stubs."""
+    """Every department is real except SEO, which is still a stub. Red Team is external to tick(): an owner's
+    session or the shift (agents.red_team.run_headless) does it."""
     return {**STUB_HANDLERS, D.RESEARCH: research_gate, D.FINANCE: finance_gate(settings),
-            D.PRODUCTION: Production(settings), D.TESTING: Testing(settings), D.QA: QA(settings),
-            D.RED_TEAM: RedTeam(settings)}
+            D.PRODUCT_DESIGN: ProductDesign(settings), D.PRODUCTION: Production(settings),
+            D.TESTING: Testing(settings), D.QA: QA(settings), D.RED_TEAM: RedTeam(settings),
+            D.COMPLIANCE: compliance_gate(settings)}
 
 
 class OperationsManager:
@@ -275,23 +279,23 @@ class OperationsManager:
                 job.status, job.error = JobStatus.QUEUED, None
                 log_event(self.session, "job.resumed", actor=ACTOR, job=job, message="Disk limits clear; requeued")
 
-    def tick(self, departments: set[Department] | None = None) -> int:
+    def tick(self, statuses: set[ProductStatus] | None = None) -> int:
         """Queue the next job for every routable product, then run queued jobs. Returns jobs run.
 
-        departments limits the tick to those gates (the shift runs one gate at a time). A job
-        paused by a guard is not counted as run, so a tick loop stops while it waits. A hard stop
+        statuses limits the tick to products at those gates (the shift runs one gate at a time). A
+        job paused by a guard is not counted as run, so a tick loop stops while it waits. A hard stop
         (HARD_STOPS) is committed, then re-raised to the caller.
         """
         self.resume_paused_jobs()
         routable = [status for status, dept in ROUTING.items()
-                    if dept is not None and (departments is None or dept in departments)]
+                    if dept is not None and (statuses is None or status in statuses)]
         for product in self.session.scalars(select(Product).where(Product.status.in_(routable)).order_by(Product.id)):
             self.next_job(product)
         self.session.commit()
         ran = 0
         queued = select(Job).where(Job.status == JobStatus.QUEUED, Job.product_id.is_not(None)).order_by(Job.id)
         for job in self.session.scalars(queued).all():
-            if self.is_external(job) or (departments is not None and job.department not in departments):
+            if self.is_external(job) or (statuses is not None and job.for_status not in statuses):
                 continue  # external jobs wait for their session, e.g. python -m app.cli review-import
             try:
                 self.run_job(job)

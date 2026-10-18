@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Read(//c/Users/sicze/OneDrive/Desktop/Hive Mint Storage for Cleanup.txt)",
-      "Edit(//c/Users/sicze/OneDrive/Desktop/Hive Mint Storage for Cleanup.txt)"
+      "Edit(//c/Users/sicze/OneDrive/Desktop/Hive Mint Storage for Cleanup.txt)",
+      "Read(//c/Users/sicze/OneDrive/Desktop/Hive Mint Daily Report.txt)",
+      "Edit(//c/Users/sicze/OneDrive/Desktop/Hive Mint Daily Report.txt)"
     ]
   }
 }
