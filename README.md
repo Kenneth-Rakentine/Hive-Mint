@@ -4,7 +4,7 @@ Hive-Mint is a local-first, AI-operated company that researches, builds, tests a
 
 The permanent operating rules are in [CLAUDE.md](CLAUDE.md).
 
-**Status: milestone v0.4 "Autopilot".** Hive-Mint runs an unattended shift every afternoon (1 PM-10 PM local): it researches niches, scores opportunities, writes specs for the best, builds and tests them, reviews them (QA, Visual QA, Red Team), reworks what reviewers flag, and leaves finished products in HUMAN_REVIEW with a daily report on the Desktop. SEO is still a stub, and nothing is ever published without your approval.
+**Status: milestone v0.5 "Listings".** Hive-Mint runs an unattended shift every afternoon (1 PM-10 PM local): it researches niches, scores opportunities, writes specs for the best, builds and tests them, reviews them (QA, Visual QA, Red Team, Compliance), reworks what reviewers flag, and writes a ready-to-upload listing package (title, tags, description, price, preview images). Finished products wait in HUMAN_REVIEW with a daily report on the Desktop. Nothing is ever published without your approval, and uploading is done by hand.
 
 ## Run on Windows 11 (PowerShell)
 
@@ -37,6 +37,10 @@ python -m app.cli shift                # one unattended shift (add --ignore-wind
 python -m app.cli approve-rework 1     # grant product 1 one more rework cycle (resumes it if paused)
 python -m app.cli spec-check spec.json # validate, build and test a spec file; changes nothing
 python -m app.cli report               # rewrite "Hive Mint Daily Report.txt" on the Desktop
+python -m app.cli review               # what waits for your decision; review 1 shows product 1's evidence
+python -m app.cli approve 1 --by "Kenny"   # approve: READY_TO_PUBLISH, then upload it by hand
+python -m app.cli relist 1 --reason "..."  # redo only the listing
+python -m app.cli reject 1 --reason "..."  # reject the product
 uvicorn app.api:app --host 127.0.0.1 --port 8000
 ```
 
@@ -147,19 +151,33 @@ The demo writes the product to `products\<product id>\v1\`, including `Mobile_De
   powershell -NoProfile -ExecutionPolicy Bypass -File C:\Hive-Mint\scripts\register_shift_task.ps1
   ```
 
+## What v0.5 adds ("Listings")
+
+- **SEO department** (`agents/seo.py`): one read-only headless Claude run drafts the listing (title, 13 tags, description, FAQ, price with its reason, category, and the words for each preview image). Every claim must cite a spec feature id.
+- **Listing rules** (`tools/listing.py`, deterministic), from Etsy's published rules for digital downloads (re-verify before any automated publishing):
+  - title at most 140 characters; exactly 13 tags of at most 20 characters, no repeats, allowed characters only; no brand or software names in the title or tags;
+  - the description names every file in the download, carries the regulated-topic disclaimer (e.g. "not tax advice"), never says a `claims_not_to_make` phrase, and ends with a fixed AI-use disclosure (the marketplace requires one);
+  - the price sits inside the researched range (owner-sourced products: $2-$60, for you to confirm);
+  - at most 5 downloadable files of at most 20 MB in an accepted type. `.xlsx` is not accepted, so spreadsheets ship inside the ZIP.
+  An invalid draft is retried once with the problems listed; after that the job retries and finally goes to ERROR.
+- **Listing images** (`tools/listing_images.py`, deterministic): 2700 x 2025 JPEGs under 1 MB, drawn from the product's own Visual QA renders (the filled-in example workbook is preferred): a cover with the Dashboard, the Dashboard, up to four sheets, and a "what's included" slide. Words stay inside the 5:4 area thumbnails show.
+- **Listing package** in `products/<id>/v<n>/listing/`: `LISTING.txt` (copy-and-paste ready), `listing.json`, `images/`, `upload/` (the ZIP) and `UPLOAD_STEPS.txt`. It is recorded in the new `listings` table.
+- **Review desk** (`app/review.py`): `review` shows the evidence (tests, QA, Red Team, Compliance, listing, AI runs); `approve` records who approved and moves the product to READY_TO_PUBLISH; `relist` sends only the listing back to SEO; `reject` needs a reason. Publishing stays manual: follow `UPLOAD_STEPS.txt`.
+- The daily report shows each waiting product's listing and the command to review it, plus approved products waiting for upload.
+
 ## What it does not do yet
 
-No metered cloud AI, no listing preview images, no marketplace or storefront connections, and no GUI. SEO is still a stub, and Production builds spreadsheet products only. Nothing can be published: the publication limit is 0 and release needs your approval.
+No metered cloud AI, no marketplace or storefront connections (you upload by hand), no sales tracking yet, and no GUI. Production builds spreadsheet products only. Nothing can be published automatically: the publication limit is 0 and release needs your approval.
 
 ## Layout
 
 | Folder | Contents |
 | --- | --- |
 | `app/` | Database, models, state machine, lifecycle, budget, API, CLI |
-| `agents/` | Operations Manager and departments (all real except SEO) |
+| `agents/` | Operations Manager and departments |
 | `providers/` | AI provider layer: local Ollama (Tier 1), headless Claude Code on the Max plan (Tier 2); metered APIs later, behind budget caps |
 | `scripts/` | Task Scheduler register/unregister scripts and the shift runner |
-| `tools/` | Deterministic helpers: spec loader, product builders, xlsx styling, packaging, formula recalculation, rendering, chart checks |
+| `tools/` | Deterministic helpers: spec loader, product builders, xlsx styling, packaging, formula recalculation, rendering, chart checks, listing rules and listing images |
 | `config/` | Settings, seed niches, owner-written product specs (`config/specs/`), rework briefs (`config/rework/`), QA word list |
 | `tests/` | pytest suite |
 | `research/` | Research notes; `research/reviews/` holds Red Team packets and verdicts (gitignored) |
