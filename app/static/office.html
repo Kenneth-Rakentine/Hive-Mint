@@ -64,17 +64,26 @@
   .map { grid-area: map; position: relative; padding: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .stage { position: relative; aspect-ratio: 16 / 9; width: 100%; max-height: 100%; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+  /* Labels hang above each ruin like weathered signboards on two short chains. */
   .bld {
-    position: absolute; transform: translate(-50%, 0);
+    position: absolute; transform: translate(-50%, -100%);
     font: 600 13px/1.1 var(--body); color: var(--bone);
-    background: rgba(0, 0, 0, .78); border: 1px solid var(--ash); padding: 2px 6px 3px;
+    background: #262626 var(--grain, none); border: 1px solid #8a8a8a;
+    box-shadow: inset 1px 1px 0 #5a5a5a, inset -1px -1px 0 var(--pitch), 2px 2px 0 var(--pitch);
+    padding: 3px 7px 4px; margin-top: -7px;
     cursor: pointer; white-space: nowrap;
   }
+  .bld::before, .bld::after {
+    content: ""; position: absolute; top: 100%; width: 0; height: 7px;
+    border-left: 1px dashed #8a8a8a;
+  }
+  .bld::before { left: 8px; }
+  .bld::after { right: 8px; }
   .bld .n { color: var(--white); margin-left: 5px; }
   .bld[aria-pressed="true"] { background: var(--white); color: var(--pitch); border-color: var(--white); }
   .bld[aria-pressed="true"] .n { color: var(--pitch); }
   .bld:focus-visible, button:focus-visible { outline: 2px dashed var(--white); outline-offset: 3px; }
-  .bld.busy::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--white); margin-right: 5px; vertical-align: 1px; }
+  .bld .busy { display: inline-block; width: 7px; height: 7px; background: var(--white); margin-right: 5px; vertical-align: 1px; }
   .bld.hurt { border: 1px dashed var(--white); }
 
   .panel { grid-area: panel; overflow: auto; }
@@ -101,7 +110,8 @@
   @media (max-width: 900px) {
     .app { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; grid-template-areas: "hud" "map" "panel" "log"; height: auto; }
     .map { min-height: 0; overflow-x: auto; justify-content: flex-start; }
-    .stage { min-width: 680px; }  /* scroll the map sideways rather than crush the labels */
+    .stage { min-width: 680px; }  /* scroll the map sideways rather than crush the signs */
+    .bld { font-size: 11px; padding: 2px 5px 3px; }
     .panel, .log { max-height: 340px; }
     .shift { margin-left: 0; }
     .log li { grid-template-columns: 70px 1fr; }
@@ -152,26 +162,29 @@
   // Door positions on the 320x180 map. Buildings sit at different depths along a winding road;
   // smaller y is farther away (drawn first, hazier). The road visits them in pipeline order.
   const LAYOUT = {
-    research:   { x: 82,  y: 46,  kind: "hall" },
-    finance:    { x: 126, y: 34,  kind: "vault" },
-    design:     { x: 178, y: 48,  kind: "hall" },
-    production: { x: 234, y: 38,  kind: "forge" },
-    testing:    { x: 288, y: 56,  kind: "tower" },
-    qa:         { x: 268, y: 98,  kind: "hall" },
-    red_team:   { x: 212, y: 88,  kind: "tower", tall: true },
-    compliance: { x: 158, y: 106, kind: "vault" },
-    seo:        { x: 106, y: 94,  kind: "stall" },
-    keep:       { x: 54,  y: 114, kind: "lighthouse" },
-    store:      { x: 96,  y: 160, kind: "stall" },
-    infirmary:  { x: 208, y: 154, kind: "hall" },
-    graveyard:  { x: 282, y: 150, kind: "grave" },
+    research:   { x: 82,  y: 51,  kind: "hall" },
+    finance:    { x: 126, y: 39,  kind: "vault" },
+    design:     { x: 178, y: 53,  kind: "hall" },
+    production: { x: 234, y: 43,  kind: "forge" },
+    testing:    { x: 288, y: 61,  kind: "tower" },
+    qa:         { x: 268, y: 103,  kind: "hall" },
+    red_team:   { x: 212, y: 93,  kind: "tower", tall: true },
+    compliance: { x: 158, y: 111, kind: "vault" },
+    seo:        { x: 106, y: 99,  kind: "stall" },
+    keep:       { x: 54,  y: 119, kind: "lighthouse" },
+    store:      { x: 96,  y: 165, kind: "stall" },
+    infirmary:  { x: 208, y: 159, kind: "hall" },
+    graveyard:  { x: 282, y: 155, kind: "grave" },
   };
   const ROAD = ["research", "finance", "design", "production", "testing", "qa", "red_team", "compliance", "seo", "keep"];
   const LANES = [["keep", "store"], ["compliance", "infirmary"], ["infirmary", "graveyard"]];
   // The sea fills the west and north-west; everything left of this line is water.
   const coast = y => 35 + Math.round(5 * Math.sin(y / 9) + 2 * Math.sin(y / 3.7)) + Math.max(0, 60 - y) * .55
-                     - (y > 100 && y < 128 ? 8 : 0);  // a rocky headland under the lighthouse
+                     - (y > 105 && y < 133 ? 8 : 0);  // a rocky headland under the lighthouse
   const ORDER = Object.keys(LAYOUT);
+  // How far above the door each building's roofline is, so its sign hangs just over it.
+  const SIGN_HEIGHT = b => ({ hall: 24, vault: 25, forge: 33, tower: b.tall ? 37 : 31, lighthouse: 50,
+                              stall: 16, grave: 18 })[b.kind];
 
   // ---------------------------------------------------------------- seeded noise (the land never changes)
   function rng(s) { return () => (s = (s * 16807) % 2147483647) / 2147483647; }
@@ -586,7 +599,7 @@
       }
       const { x, y } = LAYOUT[id];
       labels[id].style.left = (x / W * 100) + "%";
-      labels[id].style.top = ((y + 10) / H * 100) + "%";
+      labels[id].style.top = (Math.max(y - SIGN_HEIGHT(LAYOUT[id]), 13) / H * 100) + "%";
     }
   }
 
@@ -615,8 +628,7 @@
 
     for (const b of state.buildings) {
       const btn = labels[b.id], count = b.products.length;
-      btn.innerHTML = `${esc(b.name)}${count ? `<span class="n">${count}</span>` : ""}`;
-      btn.classList.toggle("busy", b.running.length > 0);
+      btn.innerHTML = `${b.running.length ? '<i class="busy" aria-hidden="true"></i>' : ""}${esc(b.name)}${count ? `<span class="n">${count}</span>` : ""}`;
       btn.classList.toggle("hurt", b.paused.length > 0 || b.products.some(p => p.status === "ERROR"));
       btn.setAttribute("aria-label", `${b.name}: ${count} product${count === 1 ? "" : "s"}, ${b.running.length} working, ${b.queued.length} waiting`);
     }
