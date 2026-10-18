@@ -6,37 +6,39 @@
 <title>Hive-Mint Office</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Jacquard+12&family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
 <style>
+  /* Black, white and grey only. Shading and texture come from dithering, not colour. */
   :root {
-    --loam: #2a1f16;      /* frame, darkest wood */
-    --bark: #5c4128;      /* bevel */
-    --bark-hi: #8a6640;   /* bevel highlight */
-    --honey: #e8b33a;     /* gold text, resources */
-    --mint: #86c99a;      /* light field */
-    --field: #3f8a60;     /* dark field */
-    --parchment: #eadab2; /* readable text on dark */
-    --ink: #2a1f16;
-    --alarm: #c2412b;
-    --ok: #9fdc6a;
+    --pitch: #000000;   /* deepest shadow, window slits */
+    --coal: #1c1c1c;    /* page */
+    --slate: #333333;   /* panels */
+    --ash: #5e5e5e;     /* bevel shadow, mortar */
+    --fog: #9a9a9a;     /* secondary text */
+    --bone: #d6d6d6;    /* body text */
+    --white: #ffffff;   /* highlights, alerts (inverted) */
+    /* The only colour anywhere: the moon and its light. */
+    --moon: #2e1747;    /* deep, dark purple moon */
+    --moonlight: #8e6cc4; /* the lighter purple it casts */
     --gap: 10px;
-    --font: "Pixelify Sans", ui-monospace, "Cascadia Mono", Consolas, monospace;
+    --body: "Pixelify Sans", ui-monospace, Consolas, monospace;
+    --title: "Jacquard 12", "Pixelify Sans", serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body {
-    background: var(--loam);
-    color: var(--parchment);
-    font-family: var(--font);
+    background: var(--coal) var(--grain, none);
+    color: var(--bone);
+    font-family: var(--body);
     font-size: 16px;
     line-height: 1.35;
     min-height: 100vh;
   }
-  /* Bevelled wooden frame, the one piece of chrome every panel shares. */
+  /* Weathered stone panel: a grain texture, chipped bevel, hard shadow. */
   .frame {
-    background: #3b2c1f;
-    border: 3px solid var(--bark);
-    box-shadow: inset 2px 2px 0 var(--bark-hi), inset -2px -2px 0 #1b140e;
+    background: var(--slate) var(--grain, none);
+    border: 3px solid var(--ash);
+    box-shadow: inset 2px 2px 0 #7a7a7a, inset -2px -2px 0 var(--pitch), 4px 4px 0 var(--pitch);
     padding: 10px 12px;
   }
   .app {
@@ -44,55 +46,57 @@
     grid-template-columns: minmax(0, 1fr) 320px;
     grid-template-rows: auto minmax(0, 1fr) 190px;
     grid-template-areas: "hud hud" "map panel" "log panel";
-    gap: var(--gap);
-    padding: var(--gap);
+    gap: 14px;
+    padding: 14px;
     height: 100vh;
   }
   .hud { grid-area: hud; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 26px; }
-  .hud h1 { margin: 0 12px 0 0; font-size: 26px; font-weight: 700; color: var(--honey); letter-spacing: .5px; }
+  .hud h1 { margin: 0 14px 0 0; font: 400 40px/0.9 var(--title); color: var(--white); text-shadow: 0 0 14px var(--moonlight); }
   .res { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
-  .res b { color: var(--honey); font-weight: 600; font-size: 19px; }
-  .res span { color: #c9b98f; font-size: 14px; }
-  .res.alert b { color: var(--alarm); }
-  .shift { margin-left: auto; font-size: 14px; color: #c9b98f; }
-  .shift .dot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; background: #6d6152; }
-  .shift.on .dot { background: var(--ok); }
+  .res b { color: var(--white); font-weight: 600; font-size: 19px; }
+  .res span { color: var(--fog); font-size: 14px; }
+  .res.alert { background: var(--white); padding: 0 6px; }
+  .res.alert b, .res.alert span { color: var(--pitch); }
+  .shift { margin-left: auto; font-size: 14px; color: var(--fog); }
+  .shift .dot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border: 1px solid var(--fog); }
+  .shift.on .dot { background: var(--white); border-color: var(--white); }
 
   .map { grid-area: map; position: relative; padding: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .stage { position: relative; aspect-ratio: 16 / 9; width: 100%; max-height: 100%; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
   .bld {
     position: absolute; transform: translate(-50%, 0);
-    font: 600 13px/1.1 var(--font); color: var(--parchment);
-    background: rgba(42, 31, 22, .86); border: 2px solid var(--bark); padding: 2px 6px 3px;
+    font: 600 13px/1.1 var(--body); color: var(--bone);
+    background: rgba(0, 0, 0, .78); border: 1px solid var(--ash); padding: 2px 6px 3px;
     cursor: pointer; white-space: nowrap;
   }
-  .bld .n { color: var(--honey); margin-left: 4px; }
-  .bld[aria-pressed="true"] { border-color: var(--honey); color: var(--honey); }
-  .bld:focus-visible, button:focus-visible { outline: 3px solid var(--honey); outline-offset: 2px; }
-  .bld.busy::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--ok); margin-right: 5px; vertical-align: 1px; }
-  .bld.hurt { border-color: var(--alarm); }
+  .bld .n { color: var(--white); margin-left: 5px; }
+  .bld[aria-pressed="true"] { background: var(--white); color: var(--pitch); border-color: var(--white); }
+  .bld[aria-pressed="true"] .n { color: var(--pitch); }
+  .bld:focus-visible, button:focus-visible { outline: 2px dashed var(--white); outline-offset: 3px; }
+  .bld.busy::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--white); margin-right: 5px; vertical-align: 1px; }
+  .bld.hurt { border: 1px dashed var(--white); }
 
   .panel { grid-area: panel; overflow: auto; }
-  .panel h2 { margin: 0 0 2px; font-size: 22px; color: var(--honey); font-weight: 700; }
-  .panel .sub { margin: 0 0 12px; color: #c9b98f; font-size: 14px; }
-  .panel h3 { margin: 14px 0 6px; font-size: 15px; font-weight: 600; color: var(--parchment); border-bottom: 2px solid var(--bark); padding-bottom: 3px; }
+  .panel h2 { margin: 0 0 4px; font: 400 34px/0.95 var(--title); color: var(--white); }
+  .panel .sub { margin: 0 0 12px; color: var(--fog); font-size: 14px; }
+  .panel h3 { margin: 14px 0 6px; font-size: 15px; font-weight: 600; color: var(--bone); border-bottom: 1px solid var(--ash); padding-bottom: 3px; }
   .panel ul { list-style: none; margin: 0; padding: 0; }
   .panel li { margin: 0 0 9px; font-size: 14px; }
-  .panel li .t { color: var(--parchment); font-weight: 600; }
-  .panel li .r { color: #c9b98f; display: block; }
-  .panel li .e { color: #f0937f; display: block; }
-  .panel code { font-family: var(--font); color: var(--honey); background: #241a12; padding: 1px 4px; user-select: all; }
-  .empty { color: #a8987a; font-size: 14px; }
+  .panel li .t { color: var(--white); font-weight: 600; }
+  .panel li .r { color: var(--fog); display: block; }
+  .panel li .e { color: var(--pitch); background: var(--white); display: block; padding: 1px 4px; margin-top: 2px; }
+  .panel code { font-family: var(--body); color: var(--white); background: var(--pitch); padding: 1px 4px; user-select: all; }
+  .empty { color: #7d7d7d; font-size: 14px; }
 
   .log { grid-area: log; overflow: auto; font-size: 14px; }
   .log ol { list-style: none; margin: 0; padding: 0; }
-  .log li { display: grid; grid-template-columns: 74px 120px 1fr; gap: 10px; padding: 2px 0; border-bottom: 1px solid #3f3022; }
-  .log time { color: #a8987a; }
-  .log .who { color: var(--honey); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .log .what { color: var(--parchment); }
-  .log .bad { color: #f0937f; }
-  .offline { color: var(--alarm); }
+  .log li { display: grid; grid-template-columns: 74px 120px 1fr; gap: 10px; padding: 2px 0; border-bottom: 1px dotted #4a4a4a; }
+  .log time { color: #7d7d7d; }
+  .log .who { color: var(--white); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log .what { color: var(--bone); }
+  .log .bad { color: var(--pitch); background: var(--white); padding: 0 4px; }
+  .offline { color: var(--pitch); background: var(--white); padding: 0 4px; }
 
   @media (max-width: 900px) {
     .app { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; grid-template-areas: "hud" "map" "panel" "log"; height: auto; }
@@ -113,7 +117,7 @@
     <div class="res" title="Sales revenue. Tracking starts once products are listed."><b id="r-gold">$0.00</b><span>gold</span></div>
     <div class="res" id="r-mana-wrap" title="Claude runs used today, out of the daily cap. Covered by your Max plan."><b id="r-mana">0/15</b><span>Claude runs today</span></div>
     <div class="res" title="Products in the company, in any state"><b id="r-products">0</b><span>products</span></div>
-    <div class="res" id="r-wait-wrap" title="Products waiting for your decision in the Keep"><b id="r-wait">0</b><span>waiting for you</span></div>
+    <div class="res" id="r-wait-wrap" title="Products waiting for your decision at the Lighthouse"><b id="r-wait">0</b><span>waiting for you</span></div>
     <div class="res" title="Free disk space, and what Hive-Mint itself takes"><b id="r-disk">–</b><span id="r-disk-label">free</span></div>
     <div class="shift" id="shift"><span class="dot"></span><span id="shift-text">Loading…</span></div>
   </header>
@@ -124,11 +128,7 @@
     </div>
   </main>
 
-  <aside class="panel frame" id="panel" aria-live="polite">
-    <h2>Your company</h2>
-    <p class="sub">Each building is a department. Crates are products; they move down the road as they pass each gate. Workers appear only while a job is really running or waiting.</p>
-    <p class="empty">Select a building to see what is there.</p>
-  </aside>
+  <aside class="panel frame" id="panel" aria-live="polite"></aside>
 
   <section class="log frame" aria-label="Message log">
     <ol id="log"></ol>
@@ -145,159 +145,411 @@
   const stage = document.getElementById("stage");
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // Door positions on the 320x180 map, in pipeline order along an S-shaped road.
+  // Greys, darkest to lightest. Nothing on the page uses colour.
+  const G = ["#000000", "#141414", "#1f1f1f", "#2a2a2a", "#363636", "#444444", "#525252", "#626262",
+             "#747474", "#888888", "#9e9e9e", "#b6b6b6", "#cfcfcf", "#e6e6e6", "#ffffff"];
+
+  // Door positions on the 320x180 map. Buildings sit at different depths along a winding road;
+  // smaller y is farther away (drawn first, hazier). The road visits them in pipeline order.
   const LAYOUT = {
-    research:   { x: 34,  y: 40,  roof: "#4f6db0", kind: "hall" },
-    finance:    { x: 96,  y: 40,  roof: "#c99a2e", kind: "vault" },
-    design:     { x: 158, y: 40,  roof: "#6a8fb5", kind: "house" },
-    production: { x: 220, y: 40,  roof: "#9c5b34", kind: "forge" },
-    testing:    { x: 282, y: 40,  roof: "#5aa0a0", kind: "lab" },
-    qa:         { x: 282, y: 104, roof: "#7d6bb0", kind: "house" },
-    red_team:   { x: 220, y: 104, roof: "#b8432f", kind: "tower" },
-    compliance: { x: 158, y: 104, roof: "#8a8a8a", kind: "court" },
-    seo:        { x: 96,  y: 104, roof: "#d9734a", kind: "stall" },
-    keep:       { x: 34,  y: 104, roof: "#e8b33a", kind: "keep" },
-    store:      { x: 34,  y: 160, roof: "#3f9a6a", kind: "stall" },
-    infirmary:  { x: 220, y: 160, roof: "#d8d0c0", kind: "house" },
-    graveyard:  { x: 282, y: 160, roof: "#555",    kind: "grave" },
+    research:   { x: 82,  y: 46,  kind: "hall" },
+    finance:    { x: 126, y: 34,  kind: "vault" },
+    design:     { x: 178, y: 48,  kind: "hall" },
+    production: { x: 234, y: 38,  kind: "forge" },
+    testing:    { x: 288, y: 56,  kind: "tower" },
+    qa:         { x: 268, y: 98,  kind: "hall" },
+    red_team:   { x: 212, y: 88,  kind: "tower", tall: true },
+    compliance: { x: 158, y: 106, kind: "vault" },
+    seo:        { x: 106, y: 94,  kind: "stall" },
+    keep:       { x: 54,  y: 114, kind: "lighthouse" },
+    store:      { x: 96,  y: 160, kind: "stall" },
+    infirmary:  { x: 208, y: 154, kind: "hall" },
+    graveyard:  { x: 282, y: 150, kind: "grave" },
   };
+  const ROAD = ["research", "finance", "design", "production", "testing", "qa", "red_team", "compliance", "seo", "keep"];
+  const LANES = [["keep", "store"], ["compliance", "infirmary"], ["infirmary", "graveyard"]];
+  // The sea fills the west and north-west; everything left of this line is water.
+  const coast = y => 35 + Math.round(5 * Math.sin(y / 9) + 2 * Math.sin(y / 3.7)) + Math.max(0, 60 - y) * .55
+                     - (y > 100 && y < 128 ? 8 : 0);  // a rocky headland under the lighthouse
   const ORDER = Object.keys(LAYOUT);
 
-  // ---------------------------------------------------------------- the land (static, seeded)
-  let seed = 7;
-  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // ---------------------------------------------------------------- seeded noise (the land never changes)
+  function rng(s) { return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+  const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+  const dith = (x, y, level) => BAYER[y & 3][x & 3] < level * 16;
+
+  // A grain texture for the stone panels, generated once.
+  (function grain() {
+    const t = document.createElement("canvas"); t.width = t.height = 96;
+    const g = t.getContext("2d"), r = rng(41);
+    for (let i = 0; i < 1400; i++) {
+      const v = r();
+      g.fillStyle = v < .5 ? "rgba(0,0,0,.18)" : "rgba(255,255,255,.05)";
+      g.fillRect((r() * 96) | 0, (r() * 96) | 0, 1 + (r() < .1), 1);
+    }
+    document.documentElement.style.setProperty("--grain", `url(${t.toDataURL()})`);
+  })();
+
+  // ---------------------------------------------------------------- the moor (static)
   const ground = document.createElement("canvas");
   ground.width = W; ground.height = H;
+  const ROCKS = [];  // sea rocks: [x, y, size]
+  const HORIZON = 19;
+  const MOON = { x: 34, y: 9, r: 7 };
+  const STARS = [];  // [x, y, phase offset]
   (function paintGround() {
-    const g = ground.getContext("2d");
-    g.fillStyle = "#4f9a6b"; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 2600; i++) {
-      g.fillStyle = rnd() < .5 ? "#5aa877" : "#468c60";
-      g.fillRect((rnd() * W) | 0, (rnd() * H) | 0, 1, 1);
+    const g = ground.getContext("2d"), r = rng(7);
+    const px = (c, x, y, w = 1, h = 1) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+    // Moor: darker and finer far away, coarser and lighter up close; slow fog bands dithered in.
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const near = y / H;
+      const fog = (Math.sin(x / 23 + y / 41) + Math.sin(y / 13 - x / 57)) * .22 + .45;
+      px(dith(x, y, fog * (.35 + near * .3)) ? G[4] : G[3], x, y);
     }
-    // Road: across the top row, down the right side, back along the middle row, down to the store.
-    const road = (x, y, w, h) => { g.fillStyle = "#a88a5c"; g.fillRect(x, y, w, h);
-      g.fillStyle = "#97794e"; for (let i = 0; i < w * h / 6; i++) g.fillRect(x + ((rnd() * w) | 0), y + ((rnd() * h) | 0), 1, 1); };
-    road(26, 52, 270, 6); road(290, 52, 6, 64); road(26, 116, 270, 6); road(26, 116, 6, 50);
-    road(26, 166, 270, 5); road(290, 116, 6, 55);
-    // A stream and trees around the edges.
-    g.fillStyle = "#4a7fb0"; for (let x = 0; x < W; x++) g.fillRect(x, 4 + Math.round(Math.sin(x / 9) * 1.5), 1, 3);
-    for (let i = 0; i < 26; i++) {
-      const x = (rnd() * W) | 0, y = 70 + ((rnd() * 22) | 0);
-      if (Math.abs(y - 80) < 3) continue;
-      tree(g, x, y);
+    // Night sky above the horizon, darkest at the top, and a low ridge of far hills.
+    for (let y = 0; y < HORIZON; y++) for (let x = 0; x < W; x++) px(dith(x, y, y / HORIZON * .35) ? G[2] : G[0], x, y);
+    for (let x = 0; x < W; x++) {
+      const ridge = HORIZON - 2 - Math.round(1.5 + Math.sin(x / 17) * 1.5 + Math.sin(x / 6.3) * .8);
+      px(G[1], x, ridge, 1, HORIZON - ridge + 1);
     }
-    for (let i = 0; i < 14; i++) tree(g, (rnd() * W) | 0, 132 + ((rnd() * 18) | 0));
-  })();
-  function tree(g, x, y) {
-    g.fillStyle = "#5c3d22"; g.fillRect(x, y + 4, 1, 3);
-    g.fillStyle = "#2f6e47"; g.fillRect(x - 2, y, 5, 4); g.fillRect(x - 1, y - 2, 3, 2);
-    g.fillStyle = "#3d8558"; g.fillRect(x - 1, y, 2, 2);
-  }
-
-  // ---------------------------------------------------------------- buildings
-  function building(b, hurt) {
-    const { x, y, roof, kind } = LAYOUT[b];
-    const L = x - 14, T = y - 22;
-    const wall = "#c9b48a", shade = "#9c8762", dark = "#2a1f16";
-    const box = (c, X, Y, w, h) => { ctx.fillStyle = c; ctx.fillRect(X, Y, w, h); };
-    if (kind === "grave") {
-      for (const [dx, dy] of [[-10, -6], [-2, -9], [6, -5], [-6, 2], [3, 0]]) {
-        box("#8b8b8b", x + dx, y + dy - 5, 4, 6); box("#6d6d6d", x + dx + 3, y + dy - 5, 1, 6); box("#3a3a3a", x + dx + 1, y + dy - 3, 2, 1);
+    for (let i = 0; i < 46; i++) {
+      const x = (r() * W) | 0, y = (r() * (HORIZON - 4)) | 0;
+      if (Math.hypot(x - MOON.x, y - MOON.y) > MOON.r + 3) STARS.push([x, y, (r() * 12) | 0]);
+    }
+    // Grass tufts and heather that grow taller toward the viewer.
+    for (let i = 0; i < 1500; i++) {
+      const x = (r() * W) | 0, y = HORIZON + 2 + ((r() * (H - HORIZON - 2)) | 0), tall = 1 + Math.floor(y / H * 3 * r());
+      px(r() < .55 ? G[5] : G[2], x, y - tall + 1, 1, tall);
+      if (y > 90 && r() < .3) px(G[6], x + 1, y - tall, 1, 1);
+    }
+    // Road: gravel track drawn as a chain of segments, rutted at the edges, wider up close.
+    const segment = (a, b) => {
+      const A = LAYOUT[a], B = LAYOUT[b], steps = Math.ceil(Math.hypot(B.x - A.x, B.y - A.y));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps, x = A.x + (B.x - A.x) * t, y = A.y + 3 + (B.y - A.y) * t;
+        const half = 2 + Math.floor(y / H * 2);
+        for (let dy = -half; dy <= half; dy++) for (let dx = -half; dx <= half; dx++) {
+          const X = Math.round(x + dx), Y = Math.round(y + dy);
+          if (Math.abs(dx) === half && r() < .5) continue;
+          px(dith(X, Y, .5) ? G[8] : G[7], X, Y);
+          if (r() < .06) px(G[5], X, Y);
+        }
       }
+    };
+    ROAD.slice(1).forEach((id, i) => segment(ROAD[i], id));
+    LANES.forEach(([a, b]) => segment(a, b));
+    // Cliff edge along the coast: a lit lip and a dark face falling to the water.
+    for (let y = HORIZON; y < H; y++) {
+      const c = coast(y);
+      px(G[9], c, y, 2, 1); px(G[1], c - 2, y, 2, 1); px(G[2], c - 3, y, 1, 1);
+    }
+    // Dead trees and standing stones, kept off the road and buildings.
+    const clear = (x, y) => Object.values(LAYOUT).every(L => Math.hypot(L.x - x, L.y - y) > 22) && x > coast(y) + 6;
+    const deadTree = (x, y) => {
+      const h = 6 + Math.floor(y / H * 6);
+      px(G[1], x, y - h, 1, h + 1); px(G[2], x + 1, y - h + 2, 1, h - 2);
+      for (let k = 0; k < 4; k++) { const by = y - h + 1 + k * 2, dir = k % 2 ? 1 : -1; px(G[1], x + dir, by); px(G[1], x + dir * 2, by - 1); }
+    };
+    const stone = (x, y) => { px(G[1], x + 1, y + 1, 3, 1); px(G[6], x, y - 4, 3, 5); px(G[10], x, y - 4, 1, 4); px(G[2], x + 2, y - 3, 1, 4); };
+    for (let i = 0; i < 70 && ROCKS.length < 999; i++) {
+      const x = (r() * W) | 0, y = 8 + ((r() * (H - 10)) | 0);
+      if (!clear(x, y)) continue;
+      (r() < .65 ? deadTree : stone)(x, y);
+    }
+    for (let i = 0; i < 70; i++) { const x = (r() * W) | 0, y = (r() * H) | 0; if (x > coast(y) + 3) px(r() < .5 ? G[6] : G[8], x, y, 2, 1); }
+    // Rocks in the surf: placed once, the waves break on them every frame.
+    for (let y = HORIZON + 4; y < H - 4; y += 9 + ((r() * 8) | 0)) ROCKS.push([coast(y) - 5 - ((r() * 10) | 0), y, 2 + ((r() * 3) | 0)]);
+  })();
+
+  // ---------------------------------------------------------------- the sea (a short, very low-bit loop)
+  // Swells roll toward the shore, foam slides up the cliff, spray bursts off the rocks. Scenery only:
+  // it says nothing about the company and never changes with the data.
+  let tide = 0;
+  function sea() {
+    const px = (c, x, y, w = 1, h = 1) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+    for (let y = HORIZON; y < H; y++) {
+      const c = coast(y);
+      for (let x = 0; x < c - 3; x++) {
+        const deep = 1 - x / c;
+        const swell = ((x - tide + Math.floor(y / 4) * 5) & 31) === 0 && (y & 1) === 0;
+        px(swell ? G[6] : (dith(x, y, .25 + (1 - deep) * .35) ? G[3] : G[1]), x, y);
+      }
+      // foam line rides up and down the base of the cliff on a four-step cycle
+      // breakers: short white crests that roll in and wash up the rocks, in broken groups
+      const wave = (Math.floor(y / 5) * 5 + tide) & 15;
+      if (wave < 4) px(G[[13, 12, 10, 7][wave]], c - 4 - (3 - wave), y, 2 + (wave === 0), 1);
+      else if ((y & 3) === 0) px(G[6], c - 4, y, 1, 1);
+    }
+    // The moon's path on the water: purple glints that come and go with the swell.
+    for (let y = HORIZON + 1; y < H; y++) {
+      const spread = 1 + Math.floor((y - HORIZON) / 9), cx = MOON.x + Math.round(Math.sin((y + tide) / 3) * 1.5);
+      for (let dx = -spread; dx <= spread; dx++) {
+        const X = cx + dx;
+        if (X < coast(y) - 4 && ((X * 7 + y * 3 + tide) % 5) === 0) px(y % 2 ? "#6a4b9c" : "#8e6cc4", X, y, 1 + (dx === 0), 1);
+      }
+    }
+    // Stars twinkle on their own slow cycles.
+    for (const [x, y, o] of STARS) {
+      const t = (tide + o * 5) % 12;
+      if (t === 0) { px(G[14], x, y); px(G[9], x - 1, y); px(G[9], x + 1, y); px(G[9], x, y - 1); px(G[9], x, y + 1); }
+      else if (t < 5) px(G[12], x, y);
+      else if (t < 9) px(G[7], x, y);
+      else px(G[4], x, y);
+    }
+    // The moon: deep dark purple, a lighter rim on the lit side, a few dark seas.
+    for (let j = -MOON.r; j <= MOON.r; j++) for (let i = -MOON.r; i <= MOON.r; i++) {
+      const d = Math.hypot(i, j);
+      if (d > MOON.r + .3) continue;
+      const rim = d > MOON.r - 1.3 && i + j < 2;
+      px(rim ? "#8e6cc4" : (dith(MOON.x + i, MOON.y + j, .3) ? "#3f2263" : "#2e1747"), MOON.x + i, MOON.y + j);
+    }
+    px("#1d0d30", MOON.x + 1, MOON.y - 1, 2, 2); px("#1d0d30", MOON.x - 2, MOON.y + 2, 2, 1); px("#1d0d30", MOON.x + 2, MOON.y + 3, 1, 1);
+    for (const [x, y, s] of ROCKS) {
+      px(G[1], x, y, s + 2, s); px(G[6], x, y, s, s - 1); px(G[9], x, y, 1, 1);
+      const phase = (tide + x) & 7;              // each rock gets its own burst in the loop
+      if (phase < 3) {
+        const h = [2, 4, 3][phase];
+        px(G[14], x - 1, y - h, s + 3, 1);
+        if (phase === 1) { px(G[12], x - 2, y - h - 1, 1, 1); px(G[12], x + s + 2, y - h - 1, 1, 1); }
+        if (phase === 2) px(G[11], x + 1, y - h - 2, 1, 1);
+      } else px(G[12], x - 1, y + s - 1, s + 3, 1);
+    }
+  }
+  if (!reduced) setInterval(() => { tide = (tide + 1) & 63; }, 260);
+
+  // ---------------------------------------------------------------- ruined buildings
+  function ruin(id, hurt, lit) {
+    const spec = LAYOUT[id], { x, y, kind } = spec;
+    const r = rng(ORDER.indexOf(id) * 97 + 13);
+    const px = (c, X, Y, w = 1, h = 1) => { ctx.fillStyle = c; ctx.fillRect(X, Y, w, h); };
+
+    // Stone wall of dithered blocks: mortar rows, staggered joints, a lit left face and a shadowed right.
+    // Oblique 3D: a shadow cast down-right on the moor, then a side face receding up-right.
+    const shadow = (L, w, base, h) => {
+      for (let j = 0; j < 5; j++) for (let i = 0; i < w + 6; i++)
+        if (dith(L + i + 3, base + j, .55 - j * .08)) px(G[1], L + i + 3, base - 1 + j);
+      for (let j = 0; j < h; j++) for (let i = 0; i < 5; i++)
+        if (dith(L + w + i, base - j, .5)) px(G[1], L + w + i + 1, base - j + 2);
+    };
+    const side = (L, T, w, h) => {
+      for (let i = 0; i < 4; i++) for (let j = 0; j < h; j++) {
+        const X = L + w + i, Y = T + j - i;
+        px(G[(j - i) % 3 === 2 ? 2 : dith(X, Y, .4) ? 5 : 4], X, Y);
+      }
+      for (let i = 0; i < 4; i++) px(G[10], L + i + 1, T - i - 1, w - 1, 1);   // top of the wall walk
+    };
+    const wall = (L, T, w, h) => {
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+        const X = L + i, Y = T + j;
+        const mortarRow = j % 3 === 2, joint = (i + (Math.floor(j / 3) % 2) * 2) % 4 === 3;
+        let tone = mortarRow || joint ? 5 : (dith(X, Y, .4) ? 9 : 8);
+        if (i === 0) tone = 11; if (i >= w - 2) tone = Math.min(tone, 5);
+        px(G[tone], X, Y);
+      }
+      // cracks
+      for (let k = 0; k < 2; k++) {
+        let cx = L + 3 + ((r() * (w - 6)) | 0), cy = T + 1;
+        for (let s = 0; s < h - 3; s++) { px(G[1], cx, cy + s); if (r() < .5) cx += r() < .5 ? -1 : 1; }
+      }
+    };
+    // Battlements with missing merlons, and a bite out of one corner.
+    const crenels = (L, T, w) => {
+      for (let i = 0; i < w; i += 4) if (r() > .3) { px(G[9], L + i, T - 3, 3, 3); px(G[11], L + i, T - 3, 1, 3); }
+    };
+    const bite = (L, T, w) => {
+      const deep = 3 + ((r() * 5) | 0), side = r() < .5;
+      for (let j = 0; j < deep; j++) {
+        const cut = deep - j + ((r() * 2) | 0);
+        const X = side ? L + w - cut : L;
+        for (let i = 0; i < cut; i++) ctx.clearRect(X + i, T - 3 + j, 1, 1), px(G[3], X + i, T - 3 + j);
+      }
+    };
+    const rubble = (L, w, base) => {
+      for (let i = 0; i < 16; i++) px(G[r() < .5 ? 7 : 9], L - 3 + ((r() * (w + 6)) | 0), base - ((r() * 3) | 0), 2, 1);
+    };
+    const slit = (X, Y, h) => { px(G[0], X, Y, 2, h); px(G[0], X, Y - 1, 1, 1); };
+    const door = (X, Y) => { px(G[0], X - 2, Y - 7, 5, 7); px(G[0], X - 1, Y - 8, 3, 1); px(G[3], X - 1, Y - 3, 3, 3); };
+
+    if (kind === "grave") {
+      for (const [dx, dy] of [[-12, -7], [-3, -10], [6, -6], [-7, 1], [3, -1]]) {
+        px(G[7], x + dx, y + dy - 6, 4, 7); px(G[11], x + dx, y + dy - 6, 1, 7); px(G[2], x + dx + 3, y + dy - 6, 1, 7);
+        px(G[1], x + dx + 1, y + dy - 4, 2, 1);
+      }
+      px(G[8], x + 10, y - 16, 1, 9); px(G[8], x + 8, y - 13, 5, 1);  // a leaning cross
       return;
     }
     if (kind === "stall") {
-      box(shade, L + 2, T + 12, 24, 10); box(wall, L + 2, T + 12, 22, 9);
-      for (let i = 0; i < 7; i++) box(i % 2 ? "#f2e6c8" : roof, L + i * 4, T + 6, 4, 6);
-      box(dark, L, T + 12, 28, 1); box("#6b4a2c", L + 1, T + 13, 1, 9); box("#6b4a2c", L + 26, T + 13, 1, 9);
+      // A collapsed market stall: broken posts, a torn striped awning hanging askew.
+      const L = x - 14, T = y - 20;
+      px(G[1], L + 1, T + 6, 1, 14); px(G[1], L + 25, T + 9, 1, 11);
+      for (let i = 0; i < 26; i++) {
+        const sag = Math.floor(i / 6);
+        if (r() < .12) continue;                         // torn holes
+        px((Math.floor(i / 3) % 2) ? G[12] : G[5], L + i, T + 6 + sag, 1, 4 + (r() < .3));
+      }
+      px(G[6], L + 3, T + 14, 21, 6); px(G[9], L + 3, T + 14, 21, 1); px(G[2], L + 3, T + 19, 21, 1);
+      rubble(L, 26, y + 1);
       return;
     }
-    const tall = kind === "tower" ? 10 : kind === "keep" ? 4 : 0;
-    // walls
-    box(shade, L, T + 8 - tall, 28, 15 + tall); box(wall, L, T + 8 - tall, 26, 14 + tall);
-    // roof
-    if (kind === "keep" || kind === "tower") {
-      box(roof, L - 1, T + 4 - tall, 30, 5);
-      for (let i = 0; i < 8; i++) if (i % 2 === 0) box(roof, L - 1 + i * 4, T + 1 - tall, 3, 3);
-    } else {
-      for (let r = 0; r < 7; r++) box(roof, L - 2 + r, T + 2 + r - tall - (kind === "vault" ? 0 : 0), 32 - r * 2, 1);
-      box(dark, L - 2, T + 8 - tall, 32, 1);
+    if (kind === "lighthouse") {
+      // Your Keep is a weathered lighthouse. Its lamp burns only while products wait for you.
+      const B = y, top = y - 40;
+      for (let j = 0; j < 6; j++) for (let i = 0; i < 26; i++) if (dith(x + i, B + j, .5 - j * .08)) px(G[1], x + i - 4, B - 1 + j);
+      for (let j = 0; j < B - top; j++) {
+        const half = 5 + Math.floor(j / 8);
+        const band = Math.floor((j + 2) / 7) % 2;
+        for (let i = -half; i <= half; i++) {
+          let tone = band ? (dith(x + i, top + j, .5) ? 12 : 11) : (dith(x + i, top + j, .5) ? 6 : 5);
+          if (i === -half) tone = Math.min(tone + 2, 13); if (i >= half - 1) tone = Math.max(tone - 3, 2);
+          px(G[tone], x + i, top + j);
+        }
+      }
+      px(G[1], x - 6, top - 2, 13, 2);                       // gallery
+      for (let i = -6; i <= 6; i += 2) px(G[7], x + i, top - 4, 1, 2);
+      px(G[0], x - 3, top - 9, 7, 7);                         // lantern room
+      px(G[1], x - 4, top - 11, 9, 2); px(G[1], x, top - 13, 1, 2);
+      if (lit) {
+        px(G[14], x - 2, top - 8, 5, 5);
+        for (let i = 1; i < 26; i++) for (let k = -Math.floor(i / 4); k <= Math.floor(i / 4); k++)
+          if (dith(x + 4 + i, top - 6 + k, .35 - i / 90)) px(G[13], x + 4 + i, top - 6 + k);
+      } else px(G[4], x - 2, top - 8, 5, 5);
+      door(x, B);
+      slit(x - 1, top + 12, 3); slit(x - 1, top + 24, 3);
+      rubble(x - 8, 16, B + 1);
+      return;
     }
-    // door and windows
-    box(dark, x - 2, y - 6, 5, 6); box("#7a5634", x - 1, y - 5, 3, 5);
-    box("#f2d27a", L + 4, T + 12 - tall / 2, 3, 3); box("#f2d27a", L + 20, T + 12 - tall / 2, 3, 3);
-    // emblem
-    const e = { vault: "#ffd84a", forge: "#ff8a3a", lab: "#bff2ff", court: "#ffffff", hall: "#d7e2ff" }[kind];
-    if (e) box(e, x - 1, T + 4 - tall, 3, 2);
-    if (kind === "forge") { box("#555", L + 22, T - 2, 3, 6); }
-    if (hurt) { box("#c2412b", L + 24, T - tall, 4, 4); box("#fff", L + 25, T + 1 - tall, 2, 1); }
+    const tall = kind === "tower" ? (spec.tall ? 16 : 10) : kind === "vault" ? 2 : 0;
+    const narrow = kind === "tower";
+    const L = narrow ? x - 9 : x - 14, w = narrow ? 18 : 28, T = y - 18 - tall, h = y - T;
+    shadow(L, w, y, h);
+    side(L, T, w, h);
+    wall(L, T, w, h);
+    if (kind === "hall") {
+      // A great hall with its roof fallen in: a few charred rafters left against the sky.
+      for (let k = 0; k < 3; k++) {
+        const X = L + 4 + k * 8 + ((r() * 3) | 0);
+        for (let s = 0; s < 6; s++) px(G[1], X + s, T - 1 - s + (k === 1 ? 2 : 0));
+      }
+    }
+    crenels(L, T, w);
+    bite(L, T, w);
+    if (kind === "forge") { px(G[2], L + w - 6, T - 9, 4, 9); px(G[7], L + w - 6, T - 12, 2, 2); px(G[9], L + w - 4, T - 15, 2, 2); }
+    if (kind === "vault") { px(G[1], x - 4, T + 3, 9, 1); px(G[12], x - 1, T + 4, 3, 3); }    // a carved coin over the gate
+    door(x, y);
+    slit(L + 4, T + 4, 4); slit(L + w - 6, T + 4, 4);
+    if (narrow) slit(x - 1, T + 4, 4);
+    rubble(L, w, y + 1);
+    if (hurt) {
+      // A torn black banner with a white cross marks held work or an error.
+      px(G[12], L + w - 2, T - 12, 1, 12);
+      px(G[0], L + w - 1, T - 12, 6, 6); px(G[0], L + w + 4, T - 7, 1, 2);
+      px(G[14], L + w, T - 11); px(G[14], L + w + 3, T - 11); px(G[14], L + w + 1, T - 10, 2, 2);
+      px(G[14], L + w, T - 8); px(G[14], L + w + 3, T - 8);
+    }
   }
 
-  // ---------------------------------------------------------------- units
-  function worker(x, y, working, frame, tint) {
-    const box = (c, X, Y, w, h) => { ctx.fillStyle = c; ctx.fillRect(X, Y, w, h); };
-    box("#f0c8a0", x, y, 3, 3);                // head
-    box(tint || "#3b6fb5", x - 1, y + 3, 5, 4); // tunic
-    box("#5c3d22", x, y + 7, 1, 2); box("#5c3d22", x + 2, y + 7, 1, 2);
-    if (working) {                              // hammer swings only while a job is RUNNING
+  // ---------------------------------------------------------------- keepers: Scottish lighthouse men
+  // Flat cap, big grey beard, striped wool scarf, long dark coat to the knee, boots. 7 x 13 pixels.
+  function keeper(x, y, working, frame, waiting) {
+    const px = (c, X, Y, w = 1, h = 1) => { ctx.fillStyle = c; ctx.fillRect(x + X, y + Y, w, h); };
+    const coat = waiting ? G[6] : G[2], coatHi = waiting ? G[8] : G[4];
+    px(G[1], 1, 0, 5, 1); px(G[1], 0, 1, 7, 1);            // flat cap with a brim
+    px(G[11], 2, 2, 3, 1);                                 // face
+    px(G[0], 2, 2); px(G[0], 4, 2);                        // eyes
+    px(G[12], 1, 3, 5, 2); px(G[12], 2, 5, 3, 1);          // beard
+    px(G[13], 1, 6, 5, 1); px(G[7], 2, 6); px(G[7], 4, 6); // scarf, striped
+    px(G[13], 5, 7, 1, 2);                                 // scarf tail
+    px(coat, 1, 7, 4, 5); px(coatHi, 1, 7, 1, 5);          // long coat
+    px(coat, 0, 8, 1, 4); px(G[1], 3, 8, 1, 3);            // sleeve, buttons
+    px(coat, 1, 12, 2, 1); px(coat, 3, 12, 2, 1);          // coat hem
+    px(G[0], 1, 13, 2, 1); px(G[0], 4, 13, 2, 1);          // boots
+    if (working) {                                         // a mallet swings only while a job is RUNNING
       const up = frame % 2 === 0;
-      box("#8a6640", x + 4, up ? y : y + 3, 1, 4);
-      box("#bbbbbb", x + 3, up ? y - 1 : y + 6, 3, 2);
+      px(G[8], 6, up ? 4 : 7, 1, 5);
+      px(G[12], 5, up ? 3 : 11, 3, 2);
     }
   }
-  function crate(x, y, color) {
-    ctx.fillStyle = "#3a2716"; ctx.fillRect(x, y, 6, 6);
-    ctx.fillStyle = color || "#c08a4a"; ctx.fillRect(x + 1, y + 1, 4, 4);
-    ctx.fillStyle = "#3a2716"; ctx.fillRect(x + 1, y + 3, 4, 1);
+  function crate(x, y, tone) {
+    const px = (c, X, Y, w = 1, h = 1) => { ctx.fillStyle = c; ctx.fillRect(X, Y, w, h); };
+    px(G[0], x, y, 7, 7);
+    px(G[tone], x + 1, y + 1, 5, 5);
+    px(G[Math.max(tone - 4, 1)], x + 1, y + 3, 5, 1); px(G[Math.max(tone - 4, 1)], x + 3, y + 1, 1, 5);
   }
-  const CRATE = { HUMAN_REVIEW: "#e8b33a", READY_TO_PUBLISH: "#9fdc6a", ERROR: "#c2412b", PAUSED: "#b9b9b9", REWORK: "#e07a3a" };
+  // Crate shading by status: waiting for you is white, approved is light, rework mid, held dark, error black.
+  const CRATE = { HUMAN_REVIEW: 14, READY_TO_PUBLISH: 12, REWORK: 7, PAUSED: 5, ERROR: 2 };
 
   // ---------------------------------------------------------------- state and drawing
   let state = null, selected = null, frame = 0;
-  let moving = []; // {id, from:{x,y}, to:{x,y}, start}
+  let moving = [];
   let lastHome = {};
-
-  function homeOf(product) {
-    for (const b of state.buildings) if (b.products.some(p => p.id === product)) return b.id;
-    return null;
-  }
 
   function draw(now) {
     ctx.drawImage(ground, 0, 0);
+    sea();
     if (!state) return;
-    for (const b of state.buildings) {
+    const waiting = state.resources.waiting_for_you > 0;
+    const byDepth = [...state.buildings].sort((a, b) => LAYOUT[a.id].y - LAYOUT[b.id].y);
+    for (const b of byDepth) {
       const hurt = b.paused.length > 0 || b.products.some(p => p.status === "ERROR");
-      building(b.id, hurt);
+      ruin(b.id, hurt, b.id === "keep" && waiting);
     }
-    for (const b of state.buildings) {
+    haze();
+    moonlight();
+    for (const b of byDepth) {
       const { x, y } = LAYOUT[b.id];
-      // Workers: one per RUNNING job at the door, QUEUED ones lined up beside it.
-      b.running.slice(0, 2).forEach((j, i) => worker(x + 6 + i * 6, y - 8, true, frame));
-      b.queued.slice(0, 4).forEach((j, i) => worker(x - 12 - i * 6, y - 8, false, frame, "#7a6a50"));
-      // Crates: up to three per building, the rest summed in the label.
+      b.running.slice(0, 2).forEach((j, i) => keeper(x + 5 + i * 8, y - 13, true, frame, false));
+      b.queued.slice(0, 4).forEach((j, i) => keeper(x - 14 - i * 8, y - 13, false, frame, true));
       b.products.slice(0, 3).forEach((p, i) => {
         if (moving.some(m => m.id === p.id)) return;
-        crate(x - 9 + i * 7, y + 1, CRATE[p.status]);
+        crate(x - 10 + i * 8, y + 2, CRATE[p.status] ?? 10);
       });
     }
-    // Crates that changed building since the last poll travel there (a real transition, not a simulation).
+    // A crate that changed gate since the last refresh travels to its new building (a real transition).
     moving = moving.filter(m => {
       const t = Math.min(1, (now - m.start) / 1200);
-      crate(Math.round(m.from.x + (m.to.x - m.from.x) * t) - 9, Math.round(m.from.y + (m.to.y - m.from.y) * t) + 1, "#e8b33a");
+      crate(Math.round(m.from.x + (m.to.x - m.from.x) * t) - 10, Math.round(m.from.y + (m.to.y - m.from.y) * t) + 2, 14);
       return t < 1;
     });
     if (selected) {
       const { x, y } = LAYOUT[selected];
-      ctx.strokeStyle = "#e8b33a"; ctx.lineWidth = 1;
-      ctx.strokeRect(x - 17.5, y - 27.5, 35, 36);
+      ctx.fillStyle = G[14];
+      for (let i = -20; i <= 20; i += 2) { ctx.fillRect(x + i, y - 46, 1, 1); ctx.fillRect(x + i, y + 10, 1, 1); }
+      for (let j = -46; j <= 10; j += 2) { ctx.fillRect(x - 20, y + j, 1, 1); ctx.fillRect(x + 20, y + j, 1, 1); }
     }
   }
+  // Atmospheric perspective: a thin dithered mist over the far third of the map.
+  const mist = document.createElement("canvas");
+  mist.width = W; mist.height = H;
+  (function () {
+    const m = mist.getContext("2d");
+    m.fillStyle = "rgba(190,190,190,.22)";
+    for (let y = 18; y < 52; y++) for (let x = 0; x < W; x++)
+      if (BAYER[(y + 1) & 3][(x + 2) & 3] < (1 - (y - 18) / 34) * 1.5) m.fillRect(x, y, 1, 1);
+  })();
+  function haze() { ctx.drawImage(mist, 0, 0); }
 
-  function loop(now) {
-    draw(now);
-    requestAnimationFrame(loop);
+  // Moonlight: a dithered purple glow falling from the moon across the scene, strongest nearby.
+  // It is the only colour in the interface besides the moon itself.
+  const glow = document.createElement("canvas");
+  glow.width = W; glow.height = H;
+  (function () {
+    const g = glow.getContext("2d");
+    const wash = g.createRadialGradient(MOON.x, MOON.y, 4, MOON.x, MOON.y, 300);
+    wash.addColorStop(0, "rgba(142,108,196,.42)");
+    wash.addColorStop(.35, "rgba(96,64,150,.20)");
+    wash.addColorStop(1, "rgba(60,36,100,.06)");
+    g.fillStyle = wash; g.fillRect(0, 0, W, H);
+    const halo = g.createRadialGradient(MOON.x, MOON.y, MOON.r, MOON.x, MOON.y, 24);
+    halo.addColorStop(0, "rgba(142,108,196,.6)"); halo.addColorStop(1, "rgba(142,108,196,0)");
+    g.fillStyle = halo; g.fillRect(0, 0, 80, 44);
+  })();
+  function moonlight() {
+    ctx.globalCompositeOperation = "screen";
+    ctx.drawImage(glow, 0, 0);
+    ctx.globalCompositeOperation = "source-over";
   }
+
+  function loop(now) { draw(now); requestAnimationFrame(loop); }
   if (!reduced) setInterval(() => { frame++; }, 380);
 
   // ---------------------------------------------------------------- DOM: labels, HUD, panel, log
@@ -306,8 +558,7 @@
     for (const id of ORDER) {
       if (!labels[id]) {
         const btn = document.createElement("button");
-        btn.className = "bld";
-        btn.type = "button";
+        btn.className = "bld"; btn.type = "button";
         btn.setAttribute("aria-pressed", "false");
         btn.addEventListener("click", () => select(id));
         stage.appendChild(btn);
@@ -315,7 +566,7 @@
       }
       const { x, y } = LAYOUT[id];
       labels[id].style.left = (x / W * 100) + "%";
-      labels[id].style.top = ((y + 9) / H * 100) + "%";
+      labels[id].style.top = ((y + 10) / H * 100) + "%";
     }
   }
 
@@ -343,8 +594,7 @@
       : `Off shift. Last shift ended ${fmtTime(sh.ended_at)}${sh.stop_reason ? ": " + sh.stop_reason : ""}`;
 
     for (const b of state.buildings) {
-      const btn = labels[b.id];
-      const count = b.products.length;
+      const btn = labels[b.id], count = b.products.length;
       btn.innerHTML = `${esc(b.name)}${count ? `<span class="n">${count}</span>` : ""}`;
       btn.classList.toggle("busy", b.running.length > 0);
       btn.classList.toggle("hurt", b.paused.length > 0 || b.products.some(p => p.status === "ERROR"));
@@ -355,7 +605,7 @@
     log.innerHTML = state.events.map(e => {
       const bad = /failed|error|refused|rejected/i.test(e.type + " " + (e.to || ""));
       const what = (e.product ? `${e.product}: ` : "") + e.message;
-      return `<li><time>${fmtTime(e.at)}</time><span class="who">${esc(e.actor)}</span><span class="what${bad ? " bad" : ""}">${esc(what)}</span></li>`;
+      return `<li><time>${fmtTime(e.at)}</time><span class="who">${esc(e.actor)}</span><span class="what"><span class="${bad ? "bad" : ""}">${esc(what)}</span></span></li>`;
     }).join("") || `<li><span></span><span></span><span class="what">Nothing has happened yet. Activity appears here as the hive works.</span></li>`;
 
     if (selected) showPanel(selected);
@@ -367,7 +617,7 @@
     if (selected) showPanel(selected); else resetPanel();
   }
   function resetPanel() {
-    document.getElementById("panel").innerHTML = `<h2>Your company</h2><p class="sub">Each building is a department. Crates are products; they move down the road as they pass each gate. Workers appear only while a job is really running or waiting.</p><p class="empty">Select a building to see what is there.</p>`;
+    document.getElementById("panel").innerHTML = `<h2>The company</h2><p class="sub">Each ruin is a department. Crates are products; they travel the road as they pass each gate. A keeper appears only while a job is really running or waiting. The lighthouse lamp burns when something needs you.</p><p class="empty">Select a building to see what is there.</p>`;
   }
 
   const HINTS = {
@@ -423,6 +673,7 @@
     if (!document.hidden) { poll(); timer = setInterval(poll, 5000); }
   }
   document.addEventListener("visibilitychange", schedule);
+  resetPanel();
   placeLabels();
   schedule();
   requestAnimationFrame(loop);

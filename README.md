@@ -168,15 +168,16 @@ The demo writes the product to `products\<product id>\v1\`, including `Mobile_De
 
 ## What v0.6 adds (the pixel office)
 
-`python -m app.cli office` opens a small low-bit map of the company in your browser, served only to this computer (127.0.0.1). It draws nothing but database state (`app/office.py`, `GET /office/state`), refreshed every 5 seconds while the tab is visible:
+`python -m app.cli office` opens a small low-bit night scene of the company in your browser, served only to this computer (127.0.0.1). The world is black, white and grey; the only colour is a deep purple moon and the faint purple light it casts. Every worker, crate and log line comes from the database (`app/office.py`, `GET /office/state`), refreshed every 5 seconds while the tab is visible:
 
-- each department is a building on one road, in pipeline order, ending at Your Keep (HUMAN_REVIEW and READY_TO_PUBLISH), with a Storefront, an Infirmary (PAUSED, ERROR) and a Graveyard (REJECTED, RETIRED);
-- products are crates at the building matching their status; when a product changed gate since the last refresh, its crate travels to the new building;
-- a worker hammers at a building only while one of its jobs is RUNNING, and QUEUED jobs wait in line at the door; a red flag marks held jobs or errors;
+- each department is a decaying castle ruin, set at different depths along a winding road in pipeline order and ending at The Lighthouse (HUMAN_REVIEW and READY_TO_PUBLISH), whose lamp burns only while something waits for you; a Storefront, an Infirmary (PAUSED, ERROR) and a Graveyard (REJECTED, RETIRED) sit off the road;
+- products are crates at the building matching their status, shaded by state (white = waiting for you, black = error); when a product changed gate since the last refresh, its crate travels to the new building;
+- workers are Scottish lighthouse keepers (flat caps, beards, scarves, long wool coats): one swings a mallet only while a job there is RUNNING, and QUEUED jobs wait in line at the door; a torn black banner marks held jobs or errors;
+- the sea, waves breaking on the rocks and the twinkling stars are short scenery loops that never change with the data;
 - the top bar shows revenue (gold; $0 until sales tracking exists), Claude runs today against the cap, products, how many wait for you, and disk space; the log at the bottom is the Event table;
 - click a building for its products (with the command to review or resume them) and its jobs.
 
-It uses no GPU-heavy rendering: one 320x180 canvas scaled up, about 1 KB of drawing code per sprite, and it stops refreshing when the tab is hidden. Motion is skipped when the system asks for reduced motion.
+It is one 320x180 canvas scaled up with no smoothing; it stops refreshing when the tab is hidden, and all motion stops when the system asks for reduced motion.
 
 ## What it does not do yet
 
