@@ -31,6 +31,8 @@ class Product(Base):
     paused_from: Mapped[ProductStatus | None] = mapped_column(_enum(ProductStatus))
     status_reason: Mapped[str] = mapped_column(Text, default="")
     rework_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Extra rework cycles the owner granted (python -m app.cli approve-rework) on top of MAX_REWORK_CYCLES.
+    extra_rework_cycles: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     approved_by: Mapped[str | None] = mapped_column(String(100))
     approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
@@ -48,7 +50,8 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    # Null only for work that comes before any product exists, e.g. niche research.
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), index=True)
     department: Mapped[Department] = mapped_column(_enum(Department), index=True)
     job_type: Mapped[str] = mapped_column(String(80))
     # Product state the job was created for; a job is stale if the product has moved on.
@@ -63,7 +66,7 @@ class Job(Base):
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
-    product: Mapped[Product] = relationship(back_populates="jobs")
+    product: Mapped[Product | None] = relationship(back_populates="jobs")
     runs: Mapped[list[AgentRun]] = relationship(back_populates="job")
 
     def __repr__(self) -> str:
@@ -202,3 +205,76 @@ class ReworkBrief(Base):
     @property
     def change_ids(self) -> list[str]:
         return [c["id"] for c in json.loads(self.required_changes_json)]
+
+
+class ResearchRecord(Base):
+    """Evidence gathered about one niche: what sells, prices, contents, complaints, gaps, with sources."""
+
+    __tablename__ = "research_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    niche: Mapped[str] = mapped_column(String(300), index=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), index=True)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    findings_json: Mapped[str] = mapped_column(Text, default="{}")
+    sources_json: Mapped[str] = mapped_column(Text, default="[]")  # [{url, title, supports}]
+    confidence: Mapped[str] = mapped_column(String(16))  # low, medium or high
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+
+
+class Opportunity(Base):
+    """One candidate product found by Research and scored by Finance."""
+
+    __tablename__ = "opportunities"
+
+    PENDING, SELECTED, BELOW_THRESHOLD, NOT_TOP, LIMIT = "PENDING", "SELECTED", "BELOW_THRESHOLD", "NOT_TOP", "LIMIT"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    research_id: Mapped[int] = mapped_column(ForeignKey("research_records.id"), index=True)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    product_type: Mapped[str] = mapped_column(String(50))
+    description: Mapped[str] = mapped_column(Text, default="")
+    data_json: Mapped[str] = mapped_column(Text, default="{}")  # price range, contents, differentiation...
+    factors_json: Mapped[str] = mapped_column(Text, default="{}")  # factor -> {score, reason, sources}
+    score: Mapped[float | None] = mapped_column()
+    rank: Mapped[int | None] = mapped_column(Integer)
+    decision: Mapped[str] = mapped_column(String(20), default="PENDING", index=True)
+    reasons_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    scored_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class SpecVersion(Base):
+    """One version of a product's spec. Never updated; a revision adds a row with a diff."""
+
+    __tablename__ = "spec_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    spec_json: Mapped[str] = mapped_column(Text)
+    diff_text: Mapped[str] = mapped_column(Text, default="")  # unified diff against the previous version
+    author: Mapped[str] = mapped_column(String(50))  # file-import, claude-headless or human
+    reason: Mapped[str] = mapped_column(Text, default="")
+    brief_id: Mapped[int | None] = mapped_column(ForeignKey("rework_briefs.id"))
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+
+    @property
+    def spec(self) -> dict:
+        return json.loads(self.spec_json)
+
+
+class Shift(Base):
+    """One unattended run of the shift orchestrator (python -m app.cli shift)."""
+
+    __tablename__ = "shifts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    stop_reason: Mapped[str] = mapped_column(Text, default="")
+    steps_json: Mapped[str] = mapped_column(Text, default="[]")  # [{step, ran, summary}]
+    claude_runs: Mapped[int] = mapped_column(Integer, default=0)
+    errors_json: Mapped[str] = mapped_column(Text, default="[]")
