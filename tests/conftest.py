@@ -144,3 +144,57 @@ def ollama_down():
         raise httpx.ConnectError("connection refused", request=request)
 
     return ollama_client(refuse)
+
+
+# --------------------------------------------------------------------------- headless Claude, always mocked
+
+MAX_AUTH = {"loggedIn": True, "authMethod": "claude.ai", "subscriptionType": "max", "apiProvider": "firstParty"}
+
+
+class FakeClaude:
+    """Stands in for subprocess.run when ClaudeHeadless calls `claude`. Never starts a real process.
+
+    replies: a list consumed one per `claude -p` call; each item is a dict merged into a successful
+    result payload (e.g. {"structured_output": {...}}), an Exception to raise, or a callable
+    (cmd, prompt) -> dict, which may also write files as a real run would.
+    """
+
+    def __init__(self, replies=(), auth=None):
+        self.replies = list(replies)
+        self.auth = MAX_AUTH if auth is None else auth
+        self.calls = []  # (cmd, prompt) for each claude -p call
+
+    def __call__(self, cmd, input=None, **kwargs):
+        import json
+        import subprocess
+
+        if "auth" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(self.auth), "")
+        self.calls.append((cmd, input))
+        if not self.replies:
+            raise AssertionError("FakeClaude: unexpected extra claude -p call")
+        reply = self.replies.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        if callable(reply):
+            reply = reply(cmd, input)
+        payload = {"type": "result", "subtype": "success", "is_error": False, "duration_ms": 1234,
+                   "result": "done", "total_cost_usd": 0.42,
+                   "usage": {"input_tokens": 1000, "output_tokens": 200, "cache_read_input_tokens": 50},
+                   "modelUsage": {"claude-opus-5-5": {}}} | reply
+        return subprocess.CompletedProcess(cmd, payload.pop("_exit", 0), json.dumps(payload), "")
+
+
+@pytest.fixture
+def fake_claude(monkeypatch, tmp_path):
+    """Patch every ClaudeHeadless to use one FakeClaude; set .replies before the code runs."""
+    from providers import claude_headless
+
+    fake = FakeClaude()
+    monkeypatch.setattr(claude_headless.subprocess, "run", fake)
+    monkeypatch.setattr(claude_headless, "resolve_bin", lambda name: "claude")
+    monkeypatch.setattr(claude_headless, "LOG_DIR", tmp_path / "headless-logs")
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+                 "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    return fake
