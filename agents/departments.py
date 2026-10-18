@@ -5,8 +5,8 @@ product status. The handlers here are STUBS: they apply trivial deterministic ch
 pass the product forward so the pipeline can be exercised end to end. Production
 (agents/production.py), Testing (agents/testing.py), QA (agents/qa.py) and Red Team
 (agents/red_team.py, via a Claude Code session) are real; see
-agents.operations.default_handlers. Product Design's rework routing is real and
-deterministic. Keep Testing deterministic.
+agents.operations.default_handlers. Product Design's deterministic rework routing
+here is the fallback; agents/spec_writer.py is the real Product Design. Keep Testing deterministic.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from sqlalchemy.orm import object_session
 from agents.rework import active_brief, uncovered
 from app.models import Job, Product
 from app.states import PIPELINE, Department, Outcome, ProductStatus
-from tools.spec import load_spec
+from tools.spec_store import product_spec
 
 S = ProductStatus
 
@@ -63,7 +63,7 @@ def product_design(product: Product, job: Job) -> StageResult:
     if product.status == S.REWORK:
         brief = active_brief(object_session(product), product)
         if brief is not None:
-            spec = load_spec(product.slug)
+            spec = product_spec(object_session(product), product)
             missing = uncovered(brief, spec) if spec is not None else []
             if missing:
                 return StageResult(

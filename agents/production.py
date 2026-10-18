@@ -25,7 +25,8 @@ from app.states import Outcome, ProductStatus
 from config.settings import Settings
 from tools.builders import BUILDERS
 from tools.packaging import make_zip, manifest, sha256
-from tools.spec import file_names, load_spec
+from tools.spec import SpecError, file_names
+from tools.spec_store import product_spec
 
 S = ProductStatus
 
@@ -38,10 +39,9 @@ class Production:
 
     def __call__(self, product: Product, job: Job) -> StageResult:
         session = object_session(product)
-        spec = load_spec(product.slug)
+        spec = product_spec(session, product, self.settings.products_dir)
         if spec is None:
-            return StageResult(Outcome.FAIL, S.REWORK,
-                               f"Production: no specification for '{product.slug}' in config/specs")
+            return StageResult(Outcome.FAIL, S.REWORK, f"Production: no specification for '{product.slug}'")
         builder = BUILDERS.get(spec["builder"])
         if builder is None:
             raise LookupError(f"Spec names unknown builder '{spec['builder']}'")
@@ -69,6 +69,10 @@ class Production:
                 raise RuntimeError(f"Builder wrote {names}, spec lists {file_names(spec)}")
             make_zip(staging / spec["zip_name"], written)
             staging.rename(target)
+        except SpecError as error:  # the spec cannot be built as written: Product Design must fix it
+            shutil.rmtree(staging, ignore_errors=True)
+            return StageResult(Outcome.FAIL, S.REWORK, f"Production: spec v{spec.get('spec_version', 1)} cannot be "
+                                                       f"built: {error}", {"failures": [f"build: {error}"]})
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
             raise

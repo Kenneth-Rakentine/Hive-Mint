@@ -118,5 +118,33 @@ def test_rework_cap_pauses_for_human(session, settings, make_product):
         transition(session, settings, product, S.PRODUCTION, actor="design", reason="retry")
     transition(session, settings, product, S.REWORK, actor="testing", reason="fail again")
     assert product.status == S.PAUSED
-    assert product.paused_from == S.PRODUCTION
-    assert "Rework limit" in product.status_reason
+    assert product.paused_from == S.REWORK  # held at the refused rework; resuming enters it
+    assert "Rework limit" in product.status_reason and "approve-rework" in product.status_reason
+
+
+def test_approve_rework_grants_cycles_and_resumes_a_paused_product(session, settings, make_product):
+    from app.lifecycle import approve_rework
+
+    product = advance_to(session, settings, make_product(), S.PRODUCTION)
+    for _ in range(settings.max_rework_cycles):
+        transition(session, settings, product, S.REWORK, actor="testing", reason="fail")
+        transition(session, settings, product, S.PRODUCTION, actor="design", reason="retry")
+    transition(session, settings, product, S.REWORK, actor="testing", reason="fail again")
+    assert product.status == S.PAUSED
+    approve_rework(session, settings, product, cycles=1, actor="owner")
+    assert product.status == S.REWORK and product.extra_rework_cycles == 1
+    count = product.rework_count
+    transition(session, settings, product, S.PRODUCTION, actor="design", reason="revised")
+    transition(session, settings, product, S.REWORK, actor="red_team", reason="still not right")
+    assert product.status == S.PAUSED and product.rework_count == count + 1  # exactly one extra cycle granted
+
+
+def test_approve_rework_on_an_active_rework_only_raises_the_limit(session, settings, make_product):
+    from app.lifecycle import approve_rework, rework_limit
+
+    product = advance_to(session, settings, make_product(), S.QA)
+    transition(session, settings, product, S.REWORK, actor="qa", reason="fail")
+    approve_rework(session, settings, product, cycles=2, actor="owner")
+    assert product.status == S.REWORK and rework_limit(settings, product) == settings.max_rework_cycles + 2
+    with pytest.raises(ValueError):
+        approve_rework(session, settings, product, cycles=0, actor="owner")

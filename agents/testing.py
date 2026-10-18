@@ -30,7 +30,8 @@ from tools.packaging import sha256
 from tools.recalc import RecalcError, Values, choose_engine, recalculate
 from tools.render import RENDERS_DIR
 from tools.cells import describe, headers as _headers, locate
-from tools.spec import excel_serial, excel_value, file_names, load_spec
+from tools.spec import excel_serial, excel_value, file_names
+from tools.spec_store import product_spec
 
 S = ProductStatus
 TOLERANCE = 0.005  # half a cent
@@ -61,7 +62,7 @@ class Testing:
 
     def __call__(self, product: Product, job: Job) -> StageResult:
         session = object_session(product)
-        spec = load_spec(product.slug)
+        spec = product_spec(session, product, self.settings.products_dir)
         if spec is None:
             return StageResult(Outcome.FAIL, S.REWORK, f"Testing: no specification for '{product.slug}'")
         build = session.scalar(select(Build).where(Build.product_id == product.id)

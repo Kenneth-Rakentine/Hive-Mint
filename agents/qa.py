@@ -46,7 +46,7 @@ from providers.ollama import OllamaProvider
 from tools.chart_checks import chart_checks
 from tools.digest import pdf_text, product_digest, workbook_text
 from tools.render import RENDERS_DIR, RenderResult, render_workbooks
-from tools.spec import load_spec
+from tools.spec_store import product_spec
 
 S = ProductStatus
 SEVERITY_POINTS = {"critical": 40, "major": 15, "minor": 5, "info": 0}
@@ -376,7 +376,7 @@ class QA:
 
     def __call__(self, product: Product, job: Job) -> StageResult:
         session = object_session(product)
-        spec = load_spec(product.slug)
+        spec = product_spec(session, product, self.settings.products_dir)
         if spec is None:
             return StageResult(Outcome.FAIL, S.REWORK, f"QA: no specification for '{product.slug}'")
         build = session.scalar(select(Build).where(Build.product_id == product.id)
