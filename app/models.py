@@ -279,3 +279,20 @@ class Shift(Base):
     claude_runs: Mapped[int] = mapped_column(Integer, default=0)
     errors_json: Mapped[str] = mapped_column(Text, default="[]")
     summary_json: Mapped[str] = mapped_column(Text, default="{}")  # Claude runs today vs cap, disk usage
+
+
+class Listing(Base):
+    """A marketplace listing package written by SEO for one build. Never updated; a redo adds a row."""
+
+    __tablename__ = "listings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    build_id: Mapped[int] = mapped_column(ForeignKey("builds.id"), index=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"))
+    path: Mapped[str] = mapped_column(Text)  # <build>/listing
+    title: Mapped[str] = mapped_column(String(200))
+    price_cents: Mapped[int] = mapped_column(Integer)
+    tags_json: Mapped[str] = mapped_column(Text, default="[]")
+    data_json: Mapped[str] = mapped_column(Text, default="{}")  # the full listing.json
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)

@@ -1,5 +1,5 @@
 """Command line: python -m app.cli {init-db,demo,run,status,rework,resume,approve-rework,review-export,
-review-import,research,spec-check,shift,report}"""
+review-import,research,spec-check,shift,report,review,approve,reject,relist}"""
 
 from __future__ import annotations
 
@@ -364,6 +364,102 @@ def cmd_status(_args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------- the owner's review desk
+
+def cmd_review(args) -> int:
+    """Show the evidence for one product (or list everything waiting for a decision)."""
+    from app.review import review_card
+
+    with _session() as session:
+        if args.product_id is None:
+            waiting = session.scalars(select(Product).where(Product.status == ProductStatus.HUMAN_REVIEW)
+                                      .order_by(Product.id)).all()
+            if not waiting:
+                console.print("Nothing is waiting for your review.")
+            for product in waiting:
+                console.print(escape(f"  #{product.id} {product.name}: {product.status_reason}"))
+            if waiting:
+                console.print("See one with [bold]python -m app.cli review <id>[/bold].")
+            return 0
+        product = _product(session, args.product_id)
+        if product is None:
+            return 2
+        card = review_card(session, product)
+    rule = "-" * 72
+    lines = [rule, f"PRODUCT #{card['id']}  {card['name']}", f"Status: {card['status']}  ({card['status_reason']})", rule]
+    if build := card.get("build"):
+        tests = card["testing"]
+        lines.append(f"Build v{build['version']}: {build['path']}")
+        lines.append(f"Testing:     {tests['passed']}/{tests['total']} checks passed"
+                     + ("" if not tests["failed"] else "  FAILED: " + "; ".join(tests["failed"])))
+    if qa := card.get("qa"):
+        lines.append(f"QA:          {qa['decision']} {qa['score'] if qa['score'] is not None else ''}/100")
+    if red := card.get("red_team"):
+        lines.append(f"Red Team:    {red['decision']} - {red['summary'][:160]}")
+    if comp := card.get("compliance"):
+        lines.append(f"Compliance:  {comp['message']}")
+        lines += [f"             ! {item}" for item in comp["ambiguous"] + comp["claims"]]
+    lines.append(f"Rework cycles used: {card['rework_cycles']}")
+    if runs := card.get("ai_runs"):
+        lines.append("AI runs:     " + ", ".join(f"{p} x{r['runs']}" for p, r in runs.items())
+                     + "  (Claude runs are covered by your Max plan; nothing billed)")
+    if listing := card.get("listing"):
+        lines += [rule, f"LISTING  ${listing['price']:.2f}  ({listing['price_reason'][:120]})",
+                  f"Title: {listing['title']}", f"Tags:  {', '.join(listing['tags'])}",
+                  f"Images: {listing['images']}   Package: {listing['path']}",
+                  "Open LISTING.txt and the images folder there to check it."]
+    elif card["status"] == "HUMAN_REVIEW":
+        lines += [rule, f"No listing yet. Make one: python -m app.cli relist {card['id']}"]
+    lines += [rule, "Decide:", f"  python -m app.cli approve {card['id']} --by \"Your Name\"",
+              f"  python -m app.cli relist {card['id']} --reason \"what to change in the listing\"",
+              f"  python -m app.cli reject {card['id']} --reason \"why\"",
+              f"  python -m app.cli rework {card['id']} <brief.json>   (to change the product itself)"]
+    console.print(escape("\n".join(lines)))
+    return 0
+
+
+def _decide(args, action) -> int:
+    settings = get_settings()
+    with _session() as session:
+        product = _product(session, args.product_id)
+        if product is None:
+            return 2
+        try:
+            action(session, settings, product)
+        except (IllegalTransition, ValueError) as error:
+            console.print(f"[red]{escape(str(error))}[/red]")
+            return 2
+        session.commit()
+        console.print(escape(f"Product {product.id} is now {product.status}: {product.status_reason}"))
+        return 0
+
+
+def cmd_approve(args) -> int:
+    from app.review import approve, latest_listing
+
+    code = _decide(args, lambda s, st, p: approve(s, st, p, approver=args.by, note=args.note))
+    if code == 0:
+        with _session() as session:
+            listing = latest_listing(session, session.get(Product, args.product_id))
+            console.print(escape(f"Upload it by hand: follow UPLOAD_STEPS.txt in {listing.path}"))
+    return code
+
+
+def cmd_reject(args) -> int:
+    from app.review import reject
+
+    return _decide(args, lambda s, st, p: reject(s, st, p, actor=args.actor, reason=args.reason))
+
+
+def cmd_relist(args) -> int:
+    from app.review import relist
+
+    code = _decide(args, lambda s, st, p: relist(s, st, p, actor=args.actor, reason=args.reason))
+    if code == 0:
+        console.print("The next shift (or python -m app.cli run) writes a new listing.")
+    return code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="Hive-Mint command line")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -404,6 +500,24 @@ def main(argv: list[str] | None = None) -> int:
     research = commands.add_parser("research", help="research a niche with headless Claude Code (web search)")
     research.add_argument("--niche", required=True)
     research.set_defaults(func=cmd_research)
+    review = commands.add_parser("review", help="show a product's evidence and listing (no id: list what waits)")
+    review.add_argument("product_id", type=int, nargs="?")
+    review.set_defaults(func=cmd_review)
+    approve_cmd = commands.add_parser("approve", help="approve a reviewed product: READY_TO_PUBLISH (upload by hand)")
+    approve_cmd.add_argument("product_id", type=int)
+    approve_cmd.add_argument("--by", required=True, help="your name, recorded with the approval")
+    approve_cmd.add_argument("--note", default="")
+    approve_cmd.set_defaults(func=cmd_approve)
+    reject_cmd = commands.add_parser("reject", help="reject a reviewed product")
+    reject_cmd.add_argument("product_id", type=int)
+    reject_cmd.add_argument("--reason", required=True)
+    reject_cmd.add_argument("--actor", default="owner")
+    reject_cmd.set_defaults(func=cmd_reject)
+    relist_cmd = commands.add_parser("relist", help="send only the listing back to SEO for a new draft")
+    relist_cmd.add_argument("product_id", type=int)
+    relist_cmd.add_argument("--reason", default="")
+    relist_cmd.add_argument("--actor", default="owner")
+    relist_cmd.set_defaults(func=cmd_relist)
     args = parser.parse_args(argv)
     return args.func(args)
 

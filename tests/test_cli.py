@@ -35,7 +35,10 @@ def _product(engine, slug=cli.DEMO["slug"]):
         return session.scalar(select(Product).where(Product.slug == slug))
 
 
-def test_demo_stops_for_red_team_then_a_pass_verdict_reaches_human_review(cli_env, settings):
+def test_demo_stops_for_red_team_then_a_pass_verdict_reaches_human_review(cli_env, settings, fake_claude,
+                                                                         sample_spec):
+    from tests.test_seo import good_draft
+
     engine, reviews = cli_env
     assert cli.main(["demo"]) == 0
     assert cli.main(["demo"]) == 1  # refuses to duplicate the sample product
@@ -64,9 +67,13 @@ def test_demo_stops_for_red_team_then_a_pass_verdict_reaches_human_review(cli_en
     assert cli.main(["review-import", str(product.id), str(verdict)]) == 0
     assert _product(engine).status == ProductStatus.COMPLIANCE
 
+    fake_claude.replies = [{"structured_output": good_draft(sample_spec)}]  # the SEO listing draft
     assert cli.main(["run"]) == 0
     assert _product(engine).status == ProductStatus.HUMAN_REVIEW
     assert cli.main(["status"]) == 0
+    assert cli.main(["review"]) == 0 and cli.main(["review", str(product.id)]) == 0
+    assert cli.main(["approve", str(product.id), "--by", "Kenny"]) == 0
+    assert _product(engine).status == ProductStatus.READY_TO_PUBLISH
 
 
 def test_rework_command_seeds_a_brief_and_resume_returns_a_held_product(cli_env, session, settings):

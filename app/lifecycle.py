@@ -99,6 +99,8 @@ def _check_guards(session: Session, settings: Settings, product: Product, target
             raise TransitionBlocked("Release requires a recorded human approval")
     if current == S.HUMAN_REVIEW and target == S.COMPLIANCE and product.previous_status != S.COMPLIANCE:
         raise TransitionBlocked("Only a compliance referral can be returned to COMPLIANCE")
+    if current == S.HUMAN_REVIEW and target == S.SEO and product.previous_status != S.SEO:
+        raise TransitionBlocked("Only a product that came from SEO can have its listing redone")
     if target == S.PUBLISHED and publications_today(session, settings) >= settings.max_publications_per_day:
         raise LimitReached(f"Daily publication limit reached ({settings.max_publications_per_day})")
 

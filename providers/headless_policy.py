@@ -70,7 +70,10 @@ SPEC = Role("spec", tools=("Read", "Glob", "Grep", "Write", "Edit", "Bash"),
 RED_TEAM = Role("red_team", tools=("Read", "Glob", "Grep", "Write"),
                 allow=("Read", "Glob", "Grep", "Write(./research/**)", "Edit(./research/**)"))
 
-ROLES = {r.name: r for r in (RESEARCH, SPEC, RED_TEAM)}
+# SEO reads the build's files and writes nothing: Python validates the listing and writes the package.
+SEO = Role("seo", tools=("Read", "Glob", "Grep"), allow=("Read", "Glob", "Grep"))
+
+ROLES = {r.name: r for r in (RESEARCH, SPEC, RED_TEAM, SEO)}
 
 # Environment variables that would make claude bill pay-per-use instead of the subscription.
 BILLING_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",

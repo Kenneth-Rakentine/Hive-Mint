@@ -21,6 +21,7 @@ from agents.production import Production
 from agents.qa import QA
 from agents.red_team import RedTeam
 from agents.research import research_gate
+from agents.seo import SEO
 from agents.spec_writer import ProductDesign
 from agents.rework import active_brief, brief_payload
 from agents.testing import Testing
@@ -82,12 +83,12 @@ ACTOR = "operations"
 
 
 def default_handlers(settings: Settings) -> dict[Department, Handler]:
-    """Every department is real except SEO, which is still a stub. Red Team is external to tick(): an owner's
-    session or the shift (agents.red_team.run_headless) does it."""
+    """Every pipeline department is real. Red Team is external to tick(): an owner's session or the shift
+    (agents.red_team.run_headless) does it."""
     return {**STUB_HANDLERS, D.RESEARCH: research_gate, D.FINANCE: finance_gate(settings),
             D.PRODUCT_DESIGN: ProductDesign(settings), D.PRODUCTION: Production(settings),
             D.TESTING: Testing(settings), D.QA: QA(settings), D.RED_TEAM: RedTeam(settings),
-            D.COMPLIANCE: compliance_gate(settings)}
+            D.COMPLIANCE: compliance_gate(settings), D.SEO: SEO(settings)}
 
 
 class OperationsManager:

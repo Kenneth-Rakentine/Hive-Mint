@@ -93,7 +93,22 @@ def _right_now(session: Session, settings: Settings, now: datetime) -> list[str]
 
     lines = [RULE, "RIGHT NOW", RULE, "", "Waiting for your approval (HUMAN_REVIEW):"]
     waiting = products(S.HUMAN_REVIEW)
-    lines += [f"  #{p.id} {p.name}: {p.status_reason}" for p in waiting] or ["  none"]
+    from app.review import latest_listing
+
+    for p in waiting:
+        lines.append(f"  #{p.id} {p.name}: {p.status_reason}")
+        if (listing := latest_listing(session, p)) is not None:
+            lines.append(f"      listing ${listing.price_cents / 100:.2f}: {listing.path}")
+        lines.append(f"      to decide: python -m app.cli review {p.id}")
+    if not waiting:
+        lines.append("  none")
+    ready = products(S.READY_TO_PUBLISH)
+    lines += ["", "Approved, waiting for you to upload (READY_TO_PUBLISH):"]
+    for p in ready:
+        listing = latest_listing(session, p)
+        lines.append(f"  #{p.id} {p.name}" + (f": follow UPLOAD_STEPS.txt in {listing.path}" if listing else ""))
+    if not ready:
+        lines.append("  none")
     lines += ["", "Paused products:"]
     for p in products(S.PAUSED):
         command = (f"python -m app.cli approve-rework {p.id}" if p.paused_from == S.REWORK
