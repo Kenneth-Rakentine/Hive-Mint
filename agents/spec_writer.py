@@ -146,7 +146,8 @@ def spec_problems(spec: dict) -> list[str]:
 class ProductDesign:
     """SPECIFICATION and REWORK handler (replaces the stub and the pause-for-a-human rework routing)."""
 
-    provider = "claude-headless"
+    # The Operations attempt wrapper's name; each headless call logs its own claude-headless AgentRun.
+    provider = "product_design"
 
     def __init__(self, settings: Settings, provider_factory=None):
         self.settings = settings

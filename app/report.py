@@ -34,6 +34,9 @@ REPORT_NAME = "Hive Mint Daily Report.txt"
 REPORT_DAYS = 14
 FOLDERID_DESKTOP = "{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}"
 RULE = "=" * 78
+STEP_LABELS = {"research": "Research", "finance": "Finance", "spec": "Spec", "production": "Production",
+               "testing": "Testing", "qa": "QA", "red_team": "Red Team", "rework": "Rework",
+               "compliance": "Compliance"}
 
 
 def desktop_dir() -> Path:
@@ -122,7 +125,9 @@ def _shift_section(session: Session, settings: Settings, shift: Shift, local) ->
              f"Result: {shift.stop_reason}", RULE, ""]
     steps = json.loads(shift.steps_json or "[]")
     lines.append("What each team did:")
-    lines += [f"  {s['step'].replace('_', ' ').title():<12} {s['summary']}" for s in steps] or [
+    first_pass = len(STEP_LABELS)
+    shown = [s for i, s in enumerate(steps) if i < first_pass or s["ran"]]  # later rounds: only steps that did work
+    lines += [f"  {STEP_LABELS.get(s['step'], s['step']):<12} {s['summary']}" for s in shown] or [
         "  nothing ran (see Result)"]
 
     opps = session.scalars(select(Opportunity).where(_between(Opportunity.scored_at, shift))
@@ -180,9 +185,12 @@ def _shift_section(session: Session, settings: Settings, shift: Shift, local) ->
     for row in revisions:
         product = session.get(Product, row.product_id)
         brief = session.get(ReworkBrief, row.brief_id) if row.brief_id else None
+        if row.author == "file-import":
+            lines.append(f"  #{product.id} spec v{row.version}: first version, imported from config/specs")
+            continue
         changed = sum(1 for ln in row.diff_text.splitlines() if ln[:1] in "+-" and ln[:3] not in ("+++", "---"))
         what = f"brief #{brief.id} ({', '.join(brief.change_ids)})" if brief else row.reason[:120]
-        lines.append(f"  #{product.id} spec v{row.version} by {row.author}: {what}; {changed} lines changed")
+        lines.append(f"  #{product.id} spec v{row.version} by {row.author}: {what}; {changed} diff lines")
     if not revisions:
         lines.append("  none")
 

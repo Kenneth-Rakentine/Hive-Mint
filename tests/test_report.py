@@ -76,3 +76,12 @@ def test_write_report_replaces_the_file(session, settings, tmp_path):
 
 def test_desktop_dir_is_a_real_folder():
     assert desktop_dir().is_dir()
+
+
+def test_later_rounds_show_only_steps_that_did_work(session, settings):
+    steps = [{"step": n, "ran": 0, "summary": f"{n} idle"} for n in
+             ("research", "finance", "spec", "production", "testing", "qa", "red_team", "rework", "compliance")]
+    steps += [{"step": "production", "ran": 1, "summary": "1 build(s)"}, {"step": "qa", "ran": 0, "summary": "qa again"}]
+    _shift(session, 0, steps=steps)
+    text = build_report(session, settings, NOW)
+    assert "  QA           qa idle" in text and "1 build(s)" in text and "qa again" not in text

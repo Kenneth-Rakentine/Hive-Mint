@@ -216,3 +216,26 @@ def test_failed_tests_without_a_brief_get_one_and_a_revision(session, settings, 
 
     fake_claude.replies = [revise]
     assert ProductDesign(settings)(product, _job(session, product)).next_status == S.PRODUCTION
+
+
+def test_a_spec_attempt_counts_as_one_headless_run(session, settings, sample_product, fake_claude):
+    """The Operations attempt wrapper must not be logged as a claude-headless run (it would eat the daily cap)."""
+    from agents.departments import STUB_HANDLERS
+    from agents.operations import OperationsManager
+    from providers.claude_headless import headless_runs_today
+
+    product = _rework_product(session, settings, sample_product)
+
+    def revise(cmd, prompt):
+        draft = _draft(settings, product)
+        spec = json.loads(draft.read_text(encoding="utf-8"))
+        spec["resolves"] += ["mileage_double_count_guard", "add_example_workbook"]
+        draft.write_text(json.dumps(spec), encoding="utf-8")
+        return _answer()
+
+    fake_claude.replies = [revise]
+    ops = OperationsManager(session, settings, handlers={**STUB_HANDLERS,
+                                                         Department.PRODUCT_DESIGN: ProductDesign(settings)})
+    ops.run_job(ops.next_job(product))
+    assert product.status == S.PRODUCTION
+    assert headless_runs_today(session, settings) == 1
