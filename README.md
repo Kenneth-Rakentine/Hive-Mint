@@ -81,6 +81,11 @@ The demo writes the product to `products\<product id>\v1\`, including `Mobile_De
   - Then the local model reviews a text digest of the product (`tools/digest.py`, never raw files) for clarity and confusing instructions.
   - The report is a score from 0 to 100 with findings by severity and a PASS/REWORK decision, stored in the `reviews` table.
   - The model's findings are capped (`QA_MODEL_MAX_DEDUCTION`), so a small model can't fail a product on its own.
+- **Visual QA** (part of QA): nothing used to look at the rendered file, so v2 shipped with chart titles over the plot, $0 $0 $1 $1 axes and overlapping charts.
+  - `tools/render.py` renders every workbook the way a buyer sees it: each sheet to PDF and each chart to PNG under `products/<id>/v<n>/renders/`. It uses Excel via COM (pywin32) and quits it in a `finally` block, falls back to LibreOffice headless, or skips with a clear warning (`HIVEMINT_RENDER_ENGINE`).
+  - `tools/chart_checks.py` reads the chart XML with no AI and fails title or legend overlay, missing axis titles the spec requires, month labels over 3 characters or without a fixed 0 rotation, a bottom legend, value axes without their own number format, major unit or minimum, and charts that overlap or leave the spec's print area or screen width (measured at 96 and 120 DPI). `tests/fixtures/v2_overlapping_charts.xlsx` is the regression case.
+  - The local qwen3.5:4b then looks at every chart PNG. It reports what it sees (title position, every axis label, rotation, cut-off text) and code decides what is a defect, such as a repeated axis label. Vision findings are capped (`QA_VISION_MAX_DEDUCTION`); with the text cap they may not exceed 100 - `QA_PASS_SCORE`.
+  - The Red Team packet lists the renders, and `/hive-review` opens every chart image.
 - **Red Team via Claude Code** (Tier 2/3, $0, human-triggered): run `/hive-review <id>` in Claude Code (`.claude/commands/hive-review.md`).
   - It exports a packet to `research/reviews/<id>/packet.md` and argues the strongest fair case against publishing: free alternatives, weak differentiation, double entry, missing features, refund risks.
   - It then imports a validated verdict. PASS goes on to COMPLIANCE. REWORK needs specific required changes. REJECT ends the product.
@@ -94,6 +99,7 @@ The demo writes the product to `products\<product id>\v1\`, including `Mobile_De
   - a Dashboard with three charts that work in Excel and Google Sheets
   - profit after the mileage deduction, and a user-set tax set-aside %
   - Testing now also checks the charts.
+- **Detailer tracker v3** (spec v3, rework brief 002): chart titles and legend clear of the plot, Jan-Dec labels with no rotation, fixed $1,000 axis steps (so an empty workbook shows $0 and $1,000), loss months shown below zero, and 500x300 px charts that fit Excel at 100% zoom on a 1920 px screen at 125% scaling.
 - **Disk guard**: Production jobs pause with `DISK_LIMIT` when free space drops below `MIN_FREE_DISK_GB` (50) or the Hive-Mint folder grows past `MAX_HIVEMINT_STORAGE_GB` (20). They resume automatically once space is back. `status` and `GET /status` show free space, the Hive-Mint folder size and the Ollama model folder size.
 
 ## What it does not do yet
@@ -107,7 +113,7 @@ No metered cloud AI, no builders beyond the sample product, no web research, no 
 | `app/` | Database, models, state machine, lifecycle, budget, API, CLI |
 | `agents/` | Operations Manager and departments (Production, Testing, QA, Red Team and rework routing are real; the rest are stubs) |
 | `providers/` | AI provider layer: local Ollama (Tier 1); metered APIs later, behind budget caps |
-| `tools/` | Deterministic helpers: spec loader, product builders, xlsx styling, packaging, formula recalculation |
+| `tools/` | Deterministic helpers: spec loader, product builders, xlsx styling, packaging, formula recalculation, rendering, chart checks |
 | `config/` | Settings, product specs (`config/specs/`), rework briefs (`config/rework/`), QA word list |
 | `tests/` | pytest suite |
 | `research/` | Research notes; `research/reviews/` holds Red Team packets and verdicts (gitignored) |
