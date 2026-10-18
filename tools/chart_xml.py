@@ -97,6 +97,7 @@ class ChartInfo:
     title_overlay: bool | None  # None when the overlay element is missing (Excel then overlays the title)
     bar_dir: str | None
     legend_pos: str | None  # None = no legend
+    legend_overlay: bool | None  # None when the overlay element is missing (Excel then overlays the legend)
     series_values: list[str] = field(default_factory=list)
     category_refs: list[str] = field(default_factory=list)
     category_cache: list[str] = field(default_factory=list)
@@ -113,6 +114,11 @@ class SheetCharts:
     charts: list[ChartInfo]
     print_area: Rect | None
     print_area_ref: str | None
+    grid: "_Grid"
+
+    def cell_rect(self, cells: str) -> Rect:
+        """A1-style range -> its rectangle in logical px on this sheet."""
+        return self.grid.rect(cells.split("!")[-1].replace("$", ""))
 
 
 def parse_ref(ref: str) -> tuple[str, str] | None:
@@ -272,6 +278,7 @@ def _chart(z: zipfile.ZipFile, part: str, sheet: str, index: int, anchor: Rect |
         title_overlay=None if overlay is None else overlay in ("1", "true"),
         bar_dir=next((d.get("val") for d in plot.iter(f"{{{NS['c']}}}barDir")), None),
         legend_pos=(_val(legend, "legendPos") or "r") if legend is not None else None,
+        legend_overlay=None if _val(legend, "overlay") is None else _val(legend, "overlay") in ("1", "true"),
     )
     for series in plot.iter(f"{{{NS['c']}}}ser"):
         info.series_values += [f.text or "" for f in series.findall("c:val//c:f", NS)]
@@ -318,5 +325,5 @@ def read_charts(path: Path, dpi: int = 96) -> dict[str, SheetCharts]:
                     if chart_part is None or chart_part not in z.namelist():
                         continue
                     charts.append(_chart(z, chart_part, name, len(charts) + 1, _anchor_rect(anchor, grid)))
-            out[name] = SheetCharts(name, charts, grid.rect(area_cells) if area_cells else None, area_ref)
+            out[name] = SheetCharts(name, charts, grid.rect(area_cells) if area_cells else None, area_ref, grid)
     return out
