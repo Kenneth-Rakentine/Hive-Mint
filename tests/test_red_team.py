@@ -130,11 +130,32 @@ def test_export_packet_has_everything_the_reviewer_needs(session, settings, at_r
     packet = export_packet(session, at_red_team, tmp_path)
     text = packet.read_text(encoding="utf-8")
     assert packet == tmp_path / str(at_red_team.id) / "packet.md"
-    for section in ("## Your task", "Free alternatives", "Double data entry", "Refund risk", "## Verdict format",
-                    f"review-import {at_red_team.id}", "## Test results", "## QA report", "## Rework history",
+    for section in ("## Your task", "Free alternatives", "Double data entry", "Refund risk", "Presentation",
+                    "## Verdict format", f"review-import {at_red_team.id}", "## Test results", "## QA report",
+                    "## Rendered views (Visual QA)", "No renders for this build", "## Rework history",
                     "## Product digest", "### Sheet: Dashboard", "## Specification", '"resolves"'):
         assert section in text, section
     assert '"build_version": 1' in text
+
+
+def test_packet_lists_every_rendered_chart_and_pdf(session, settings, at_red_team, tmp_path):
+    from tools.render import RenderedChart, RenderResult
+
+    build = session.scalar(select(Build))
+    renders = tmp_path / "build" / "renders"
+    renders.mkdir(parents=True)
+    result = RenderResult("excel", str(renders), sheet_pdfs=[str(renders / "tracker--dashboard.pdf")],
+                          charts=[RenderedChart("t.xlsx", "Dashboard", 1, "Income vs Costs by Month",
+                                                str(renders / "tracker--dashboard--chart1.png"))])
+    (renders / "manifest.json").write_text(json.dumps(result.as_dict()), encoding="utf-8")
+    build.path = str(tmp_path / "build")
+    text = export_packet(session, at_red_team, tmp_path / "reviews").read_text(encoding="utf-8")
+    assert "Rendered by **excel**" in text and "Open every image below with the Read tool" in text
+    png = renders / "tracker--dashboard--chart1.png"
+    assert f"- Chart 1 on Dashboard, 'Income vs Costs by Month': `{png}`" in text
+    assert f"- `{renders / 'tracker--dashboard.pdf'}`" in text
+    categories = RedTeamVerdict.model_json_schema()["$defs"]["RedTeamFinding"]["properties"]["category"]["enum"]
+    assert "presentation" in categories
 
 
 def test_seed_brief_is_valid_and_resolved_by_spec_v2():

@@ -3,7 +3,8 @@ Claude Code session ($0), never an automatic cloud call.
 
 Operations queues a RED_TEAM job and leaves it waiting. The session (/hive-review <id>):
 1. `python -m app.cli review-export <id>` writes research/reviews/<id>/packet.md: spec,
-   product digest, test results, QA report and rework history.
+   product digest, test results, QA report, rework history, and the rendered views (chart
+   PNGs and sheet PDFs from Visual QA) for the reviewer to look at.
 2. Claude reviews it as an independent Red Team and writes a structured verdict JSON.
 3. `python -m app.cli review-import <id> <file.json>` validates the verdict and records it:
    PASS moves the product to COMPLIANCE, REWORK to REWORK with a rework brief, REJECT ends it.
@@ -28,6 +29,7 @@ from app.models import Build, Job, Product, Review, ReworkBrief, TestResult
 from app.states import OPEN_JOB_STATUSES, Department, Outcome, ProductStatus
 from config.settings import ROOT, Settings
 from tools.digest import product_digest
+from tools.render import RENDERS_DIR
 from tools.spec import load_spec
 
 S = ProductStatus
@@ -36,7 +38,7 @@ PROVIDER = "claude-code"
 TIER = 2
 NEXT = {"PASS": S.COMPLIANCE, "REWORK": S.REWORK, "REJECT": S.REJECTED}
 CATEGORIES = ("free_alternatives", "differentiation", "double_entry", "missing_feature", "refund_risk", "misleading",
-              "other")
+              "presentation", "other")
 
 
 class VerdictError(ValueError):
@@ -122,6 +124,23 @@ def _verdict_example(product: Product, build: Build | None) -> str:
     return json.dumps(example, indent=2)
 
 
+def rendered_views(build_dir: Path) -> list[str]:
+    """Packet lines listing the Visual QA renders of this build, or saying there are none."""
+    manifest = build_dir / RENDERS_DIR / "manifest.json"
+    if not manifest.is_file():
+        return ["No renders for this build (QA ran without Excel or LibreOffice). Open the workbook yourself."]
+    render = json.loads(manifest.read_text(encoding="utf-8"))
+    lines = [f"Rendered by **{render['engine'] or 'nothing'}** into `{render['out_dir']}`. Open every image below "
+             "with the Read tool and judge it as a buyer would, at 100% zoom.", ""]
+    lines += [f"- Warning: {w}" for w in render["warnings"]]
+    lines += [f"- Chart {c['index']} on {c['sheet']}, '{c['title']}': `{c['png']}`" for c in render["charts"]]
+    if not render["charts"]:
+        lines.append("- No chart images (see the warnings). Look at the sheet PDFs and the workbook instead.")
+    lines += ["", "Sheet PDFs (the Dashboard one shows the whole layout on one page):", ""]
+    lines += [f"- `{p}`" for p in render["sheet_pdfs"]] or ["- None."]
+    return lines
+
+
 def _spec_for_packet(spec: dict) -> dict:
     """The spec, with scenario detail reduced to names (the test results below cover the answers)."""
     trimmed = json.loads(json.dumps(spec))
@@ -175,6 +194,9 @@ def export_packet(session: Session, product: Product, base: Path = REVIEWS_DIR) 
         "- **Missing features buyers expect** for this niche.",
         "- **Refund risk**: what makes a buyer feel misled, confused or disappointed (claims the product does "
         "not meet, broken charts, US-only tax assumptions, setup friction).",
+        "- **Presentation**: open every rendered chart image and the Dashboard PDF listed under *Rendered views*. "
+        "Overlapping or clipped text, duplicate axis labels, crowded or unreadable labels and charts that look "
+        "broken in a listing photo are reasons against publishing (category `presentation`).",
         "",
         "Decide **PASS** (publishable as is), **REWORK** (fixable: list specific required changes, each with a "
         "stable lowercase id, what to change, why, and how to tell it is done) or **REJECT** (not worth "
@@ -211,6 +233,7 @@ def export_packet(session: Session, product: Product, base: Path = REVIEWS_DIR) 
                      f"build id {qa.build_id}).")
         lines += [f"- [{f['severity']}] ({f['source']}/{f['check']}) {f['where']}: {f['issue']}"
                   for f in report.get("findings", [])]
+    lines += ["", "## Rendered views (Visual QA)", ""] + rendered_views(Path(build.path))
     lines += ["", "## Rework history", ""]
     lines += [f"- Brief #{b.id} from {b.source} ({b.status}): " +
               "; ".join(f"`{c['id']}` {c['change']}" for c in json.loads(b.required_changes_json))

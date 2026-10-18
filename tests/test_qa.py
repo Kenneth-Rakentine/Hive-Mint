@@ -196,8 +196,8 @@ def _fake_renderer(engine="excel"):
 
 
 def test_vision_pass_sends_every_chart_image_and_is_capped(session, settings, product_at_qa, sample_spec,
-                                                           good_build):
-    build = record_build(session, product_at_qa, good_build, sample_spec)
+                                                           build_copy):
+    build = record_build(session, product_at_qa, build_copy, sample_spec)
     seen = []
 
     def handler(request):
@@ -213,7 +213,7 @@ def test_vision_pass_sends_every_chart_image_and_is_capped(session, settings, pr
 
     (workbooks, out_dir), = renderer.calls
     assert [p.name for p in workbooks] == ["Mobile_Detailer_Business_Tracker.xlsx"]
-    assert out_dir == good_build / "renders"
+    assert out_dir == build_copy / "renders"
     images = [m for m in seen if m.get("images")]
     assert len(images) == 3 and all(len(m["images"]) == 1 for m in images)
     assert '"Costs by Category" on the Dashboard tab of a blank template' in images[2]["content"]
@@ -254,8 +254,8 @@ def test_skipped_render_is_reported_and_skips_the_vision_pass(session, settings,
 
 
 def test_ollama_down_during_the_vision_pass_retries_then_errors(session, settings, product_at_qa, sample_spec,
-                                                               good_build):
-    record_build(session, product_at_qa, good_build, sample_spec)
+                                                               build_copy):
+    record_build(session, product_at_qa, build_copy, sample_spec)
 
     def handler(request):
         if json.loads(request.content)["messages"][-1].get("images"):

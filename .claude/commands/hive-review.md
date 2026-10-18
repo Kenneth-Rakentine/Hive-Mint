@@ -15,9 +15,15 @@ Run:
 .venv\Scripts\python -m app.cli review-export $ARGUMENTS
 ```
 
-Read `research/reviews/$ARGUMENTS/packet.md` in full. It has the spec, a text digest of the build, test results, the QA report and the rework history. The database is the source of truth; don't rely on memory of earlier sessions.
+Read `research/reviews/$ARGUMENTS/packet.md` in full. It has the spec, a text digest of the build, test results, the QA report, the rendered views and the rework history. The database is the source of truth; don't rely on memory of earlier sessions.
 
 If the digest isn't enough, inspect the build folder named in the packet (e.g. open the .xlsx with openpyxl in a short read-only Python snippet). Never modify the build, the spec or the database by hand.
+
+## 1b. Look at the product
+
+The packet's **Rendered views** section lists every chart PNG and every sheet PDF that Visual QA rendered with Excel. Open **every chart PNG** with the Read tool (it shows images), plus the Dashboard PDF, and look at them the way a buyer sees them in a listing photo or at 100% zoom. Note anything that looks broken or amateur: overlapping or clipped text, duplicate axis labels, crowded or rotated labels, unreadable colors, a chart running off its area. Don't trust QA's verdict on looks; check yourself.
+
+If the packet says there are no renders, say so in your report and look at the workbook's chart settings instead.
 
 ## 2. Make the strongest fair case against publishing
 
@@ -28,6 +34,7 @@ Work through each of these and note concrete evidence:
 - **Double data entry.** Is anything typed twice, or copied between tabs or files?
 - **Missing features buyers expect.** What does this niche expect (e.g. invoices or receipts, quotes, appointment or recurring-customer tracking, payment status, per-vehicle notes, mobile use)?
 - **What causes refunds.** Claims the product doesn't meet, confusing setup, charts that are empty or broken until data is entered, US-only tax assumptions, Excel/Google Sheets incompatibilities, anything that reads like tax advice.
+- **Presentation.** What you saw in the rendered images. A chart that looks broken in a listing photo costs sales and invites refunds; use the `presentation` category.
 
 ## 3. Decide
 
@@ -61,6 +68,7 @@ If the import rejects the verdict, fix the JSON and import again. Don't change t
 
 Tell the owner:
 - the decision and your strongest three points
+- what the rendered charts look like, and any visual defects you saw
 - any required changes
 - the product's new status, as printed by the import
 
