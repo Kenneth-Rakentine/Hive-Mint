@@ -4,7 +4,7 @@ Hive-Mint is a local-first, AI-operated company that researches, builds, tests a
 
 The permanent operating rules are in [CLAUDE.md](CLAUDE.md).
 
-**Status: milestone v0.5 "Listings".** Hive-Mint runs an unattended shift every afternoon (1 PM-10 PM local): it researches niches, scores opportunities, writes specs for the best, builds and tests them, reviews them (QA, Visual QA, Red Team, Compliance), reworks what reviewers flag, and writes a ready-to-upload listing package (title, tags, description, price, preview images). Finished products wait in HUMAN_REVIEW with a daily report on the Desktop. Nothing is ever published without your approval, and uploading is done by hand.
+**Status: milestone v0.6 (pixel office), on top of v0.5 "Listings".** Hive-Mint runs an unattended shift every afternoon (1 PM-10 PM local): it researches niches, scores opportunities, writes specs for the best, builds and tests them, reviews them (QA, Visual QA, Red Team, Compliance), reworks what reviewers flag, and writes a ready-to-upload listing package (title, tags, description, price, preview images). Finished products wait in HUMAN_REVIEW with a daily report on the Desktop. Nothing is ever published without your approval, and uploading is done by hand.
 
 ## Run on Windows 11 (PowerShell)
 
@@ -41,10 +41,11 @@ python -m app.cli review               # what waits for your decision; review 1 
 python -m app.cli approve 1 --by "Kenny"   # approve: READY_TO_PUBLISH, then upload it by hand
 python -m app.cli relist 1 --reason "..."  # redo only the listing
 python -m app.cli reject 1 --reason "..."  # reject the product
+python -m app.cli office               # open the pixel office at http://127.0.0.1:8000 (Ctrl+C closes it)
 uvicorn app.api:app --host 127.0.0.1 --port 8000
 ```
 
-With the server running, open http://127.0.0.1:8000/health and http://127.0.0.1:8000/status. Press Ctrl+C to stop it.
+With the server running, http://127.0.0.1:8000/ is the pixel office, and /health and /status return JSON. Press Ctrl+C to stop it.
 
 The database lives at `data\hivemint.db` and is never committed. Delete it to start over.
 
@@ -165,15 +166,27 @@ The demo writes the product to `products\<product id>\v1\`, including `Mobile_De
 - **Review desk** (`app/review.py`): `review` shows the evidence (tests, QA, Red Team, Compliance, listing, AI runs); `approve` records who approved and moves the product to READY_TO_PUBLISH; `relist` sends only the listing back to SEO; `reject` needs a reason. Publishing stays manual: follow `UPLOAD_STEPS.txt`.
 - The daily report shows each waiting product's listing and the command to review it, plus approved products waiting for upload.
 
+## What v0.6 adds (the pixel office)
+
+`python -m app.cli office` opens a small low-bit map of the company in your browser, served only to this computer (127.0.0.1). It draws nothing but database state (`app/office.py`, `GET /office/state`), refreshed every 5 seconds while the tab is visible:
+
+- each department is a building on one road, in pipeline order, ending at Your Keep (HUMAN_REVIEW and READY_TO_PUBLISH), with a Storefront, an Infirmary (PAUSED, ERROR) and a Graveyard (REJECTED, RETIRED);
+- products are crates at the building matching their status; when a product changed gate since the last refresh, its crate travels to the new building;
+- a worker hammers at a building only while one of its jobs is RUNNING, and QUEUED jobs wait in line at the door; a red flag marks held jobs or errors;
+- the top bar shows revenue (gold; $0 until sales tracking exists), Claude runs today against the cap, products, how many wait for you, and disk space; the log at the bottom is the Event table;
+- click a building for its products (with the command to review or resume them) and its jobs.
+
+It uses no GPU-heavy rendering: one 320x180 canvas scaled up, about 1 KB of drawing code per sprite, and it stops refreshing when the tab is hidden. Motion is skipped when the system asks for reduced motion.
+
 ## What it does not do yet
 
-No metered cloud AI, no marketplace or storefront connections (you upload by hand), no sales tracking yet, and no GUI. Production builds spreadsheet products only. Nothing can be published automatically: the publication limit is 0 and release needs your approval.
+No metered cloud AI, no marketplace or storefront connections (you upload by hand), and no sales tracking yet. Production builds spreadsheet products only. Nothing can be published automatically: the publication limit is 0 and release needs your approval.
 
 ## Layout
 
 | Folder | Contents |
 | --- | --- |
-| `app/` | Database, models, state machine, lifecycle, budget, API, CLI |
+| `app/` | Database, models, state machine, lifecycle, budget, review desk, API, CLI, the pixel office (`app/static/office.html`) |
 | `agents/` | Operations Manager and departments |
 | `providers/` | AI provider layer: local Ollama (Tier 1), headless Claude Code on the Max plan (Tier 2); metered APIs later, behind budget caps |
 | `scripts/` | Task Scheduler register/unregister scripts and the shift runner |
