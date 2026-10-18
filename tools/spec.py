@@ -1,9 +1,15 @@
 """Product specifications: structured data shared by Production (what to build) and Testing
-(what to check). Specs live as JSON in config/specs/<slug>.json.
+(what to check). Hand-written specs live as JSON in config/specs/<slug>.json; each product's
+versions are stored in the spec_versions table (tools/spec_store.py).
+
+Spec format v4 (builder "spreadsheet") describes every sheet, column, formula, chart and the
+PDF/README text; see tools/builders/spreadsheet.py. normalize() derives the flat views Testing
+and QA read (column names, validated columns) and expands example workbooks.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from datetime import date
@@ -26,8 +32,38 @@ def load_spec(slug: str, spec_dir: Path = SPEC_DIR) -> dict | None:
     path = spec_dir / f"{slug}.json"
     if not path.is_file():
         return None
-    spec = json.loads(path.read_text(encoding="utf-8"))
+    return prepare(json.loads(path.read_text(encoding="utf-8")))
+
+
+def prepare(spec: dict) -> dict:
+    """Validate a spec and return its normalized copy (the form Production, Testing and QA read)."""
     validate_spec(spec)
+    return normalize(spec)
+
+
+def normalize(spec: dict) -> dict:
+    """A copy with derived fields: table column names and validated columns, example workbooks expanded.
+
+    Idempotent. Raw v4 table columns are dicts ({name, width, format, formula, validation}); the
+    normalized sheet keeps them as column_defs and lists plain names under columns.
+    """
+    spec = copy.deepcopy(spec)
+    by_name = {f["name"]: f for f in spec["files"]}
+    for file in spec["files"]:
+        if file["kind"] == "xlsx" and file.get("example_of"):
+            base = by_name[file["example_of"]]
+            for key in ("sheets", "rate_table"):
+                if key in base and key not in file:
+                    file[key] = copy.deepcopy(base[key])
+    for file in spec["files"]:
+        for sheet in file.get("sheets", []):
+            columns = sheet.get("columns")
+            if columns and isinstance(columns[0], dict):
+                sheet["column_defs"] = columns
+                sheet["columns"] = [c["name"] for c in columns]
+                sheet.setdefault("validated_columns", [c["name"] for c in columns if c.get("validation")])
+                sheet.setdefault("header_row", 1)
+                sheet.setdefault("freeze_header", True)
     return spec
 
 
@@ -42,12 +78,18 @@ def validate_spec(spec: dict) -> None:
         if file.get("kind") not in FILE_KINDS:
             raise SpecError(f"{file['name']}: kind must be one of {sorted(FILE_KINDS)}")
         if file["kind"] == "xlsx":
+            if base := file.get("example_of"):
+                target = next((f for f in spec["files"] if f["name"] == base), None)
+                if target is None or target["kind"] != "xlsx" or target.get("example_of"):
+                    raise SpecError(f"{file['name']}: example_of must name another (non-example) xlsx file")
+                file = {**file, "sheets": file.get("sheets", target.get("sheets", []))}
             sheet_names = {s["name"] for s in file.get("sheets", [])}
+            refs = [("example_data", r) for r in file.get("example_data", [])]
             for scenario in file.get("scenarios", []):
-                for ref in scenario.get("inputs", []) + scenario.get("expect", []):
-                    if ref["sheet"] not in sheet_names:
-                        raise SpecError(f"{file['name']}: scenario '{scenario['name']}' uses unknown sheet "
-                                        f"'{ref['sheet']}'")
+                refs += [(scenario["name"], r) for r in scenario.get("inputs", []) + scenario.get("expect", [])]
+            for owner, ref in refs:
+                if ref["sheet"] not in sheet_names:
+                    raise SpecError(f"{file['name']}: scenario '{owner}' uses unknown sheet '{ref['sheet']}'")
 
 
 def file_names(spec: dict) -> list[str]:

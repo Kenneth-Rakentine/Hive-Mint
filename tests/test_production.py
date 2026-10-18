@@ -72,8 +72,8 @@ def test_one_job_entry_feeds_income_and_customer_history(good_build):
     wb = load_workbook(good_build / "Mobile_Detailer_Business_Tracker.xlsx")
     customers = wb["Customers"]
     jobs_col = next(c.column for c in customers[1] if c.value == "Total Spent")
-    assert "'Jobs'!" in customers.cell(2, jobs_col).value
-    assert "'Jobs'!" in wb["Summary"]["B7"].value and "'Supplies'!" in wb["Summary"]["D7"].value
+    assert "Jobs!" in customers.cell(2, jobs_col).value
+    assert "Jobs!" in wb["Summary"]["B7"].value and "Supplies!" in wb["Summary"]["D7"].value
 
 
 def test_instructions_pdf_and_readme_are_readable(good_build):

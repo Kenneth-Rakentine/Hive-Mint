@@ -1,265 +1,1904 @@
 {
-  "slug": "mobile-auto-detailer-income-expense-tracker",
-  "name": "Mobile Auto Detailer Income & Expense Tracker",
-  "spec_version": 3,
-  "builder": "mobile_detailer_tracker",
-  "zip_name": "Mobile_Detailer_Business_Tracker.zip",
-  "resolves": ["merge_workbooks", "dashboard_charts", "profit_after_mileage", "tax_set_aside",
-               "chart_titles_clear", "chart_month_labels", "chart_axis_scale", "chart_layout_fits"],
-  "changelog": [
-    {"spec_version": 1, "summary": "Four separate workbooks, instructions PDF and README."},
-    {"spec_version": 2, "summary": "One workbook with tabs (jobs feed income and customer history; supply purchases count as expenses), a Dashboard with three charts, profit after the mileage deduction and a user-set tax set-aside %."},
-    {"spec_version": 3, "summary": "Chart fixes: titles above the plot, short horizontal month labels, legend clear of the axis, fixed value-axis scales that read cleanly on an empty workbook, and charts placed side by side without overlap inside a one-page print area that fits a 1920 px screen at 100% zoom."}
-  ],
-  "parameters": {
-    "data_rows": 500,
-    "customer_rows": 200,
-    "tax_year": 2026,
-    "tax_set_aside_pct": 0.25,
-    "irs_mileage_rates": [
-      {"effective_from": "2025-01-01", "rate": 0.70, "source": "IRS Notice 2025-5"},
-      {"effective_from": "2026-01-01", "rate": 0.725, "source": "IRS Notice 2026-10"},
-      {"effective_from": "2026-07-01", "rate": 0.76, "source": "IRS Announcement 2026-11"}
-    ],
-    "expense_categories": [
-      "Equipment & Tools", "Fuel", "Vehicle Repairs & Maintenance", "Insurance", "Marketing & Advertising",
-      "Phone & Software", "Water & Utilities", "Licenses & Fees", "Training", "Other"
-    ],
-    "supply_categories": [
-      "Chemicals", "Towels & Microfiber", "Pads & Brushes", "Equipment", "Water & Power", "Safety & PPE",
-      "Other"
-    ],
-    "services": [
-      "Exterior Wash", "Interior Detail", "Full Detail", "Wax & Sealant", "Paint Correction", "Ceramic Coating",
-      "Headlight Restoration", "Engine Bay", "Odor Removal", "Fleet Wash", "Other"
-    ],
-    "payment_methods": ["Cash", "Card", "Venmo", "Zelle", "Cash App", "PayPal", "Check", "Other"]
+ "slug": "mobile-auto-detailer-income-expense-tracker",
+ "name": "Mobile Auto Detailer Income & Expense Tracker",
+ "spec_version": 4,
+ "builder": "spreadsheet",
+ "zip_name": "Mobile_Detailer_Business_Tracker.zip",
+ "resolves": [
+  "merge_workbooks",
+  "dashboard_charts",
+  "profit_after_mileage",
+  "tax_set_aside",
+  "chart_titles_clear",
+  "chart_month_labels",
+  "chart_axis_scale",
+  "chart_layout_fits"
+ ],
+ "changelog": [
+  {
+   "spec_version": 1,
+   "summary": "Four separate workbooks, instructions PDF and README."
   },
-  "features": [
-    {"id": "single_workbook", "description": "Everything in one workbook with tabs",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Jobs"}},
-    {"id": "jobs_log", "description": "Each job is entered once and feeds income, the Dashboard and customer history",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Jobs", "column": "Total"}},
-    {"id": "expense_categories", "description": "Expenses by category",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Expenses", "column": "Category"}},
-    {"id": "supply_cost_per_job", "description": "Supply purchases with material cost per job",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Supplies", "column": "Cost per Job"}},
-    {"id": "mileage_deduction", "description": "Mileage log with the IRS standard mileage deduction",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Mileage Log", "column": "Deduction"}},
-    {"id": "editable_irs_rates", "description": "IRS mileage rates the buyer can update",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "IRS Rates", "column": "Rate per Mile"}},
-    {"id": "customer_history", "description": "Customer list with visits, spend, unpaid balance and last visit",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Customers", "column": "Unpaid Balance"}},
-    {"id": "monthly_summary", "description": "Month-by-month income, costs, profit and mileage",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Summary", "label": "Profit After Mileage"}},
-    {"id": "dashboard_charts", "description": "Dashboard with charts that work in Excel and Google Sheets",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Dashboard", "charts_min": 3}},
-    {"id": "profit_after_mileage", "description": "Profit after the mileage deduction",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Dashboard", "label": "Profit After Mileage"}},
-    {"id": "tax_set_aside", "description": "A user-set tax set-aside % and the amount to put aside",
-     "evidence": {"file": "Mobile_Detailer_Business_Tracker.xlsx", "sheet": "Dashboard", "label": "Tax Set-Aside %"}},
-    {"id": "instructions", "description": "Step-by-step instructions PDF",
-     "evidence": {"file": "Instructions.pdf"}}
-  ],
-  "spreadsheet_rules": {
-    "comment": "Functions available in both Excel (2010+) and Google Sheets. Anything else fails Testing.",
-    "allowed_functions": ["AND", "COUNT", "COUNTIF", "COUNTIFS", "DATE", "IF", "ISNUMBER", "MAX", "MIN", "ROUND",
-                          "SUM", "SUMIF", "SUMIFS", "SUMPRODUCT", "VLOOKUP"],
-    "forbidden_values": ["#REF!", "#DIV/0!", "#NAME?", "#VALUE!", "#N/A", "#NUM!", "#NULL!"]
+  {
+   "spec_version": 2,
+   "summary": "One workbook with tabs (jobs feed income and customer history; supply purchases count as expenses), a Dashboard with three charts, profit after the mileage deduction and a user-set tax set-aside %."
   },
-  "files": [
-    {
-      "name": "Mobile_Detailer_Business_Tracker.xlsx",
-      "kind": "xlsx",
-      "sheets": [
-        {"name": "How to Use"},
-        {"name": "Dashboard",
-         "chart_layout": {"print_area": "A1:S35", "max_right_px": 1440,
-                          "comment": "Excel at 100% zoom on a 1920 px screen with 125% Windows scaling shows about 1490 logical px of sheet; checked at 96 and 120 DPI"},
-         "charts": [
-           {"title": "Income vs Costs by Month", "series": 3, "anchor": "D4", "width_px": 500, "height_px": 300,
-            "category_axis": "months", "legend": "t",
-            "value_axis": {"min": 0, "major_unit": 1000, "num_fmt": "\"$\"#,##0"}},
-           {"title": "Profit After Mileage by Month", "series": 1, "anchor": "D20", "width_px": 500,
-            "height_px": 300, "category_axis": "months",
-            "value_axis": {"allow_negative": true, "major_unit": 1000, "num_fmt": "\"$\"#,##0"},
-            "comment": "No fixed minimum: a loss month must show below zero, not be cut off"},
-           {"title": "Costs by Category", "series": 1, "anchor": "L4", "width_px": 500, "height_px": 300,
-            "horizontal": true,
-            "value_axis": {"min": 0, "major_unit": 1000, "num_fmt": "\"$\"#,##0"}}
-         ]},
-        {"name": "Jobs", "header_row": 1, "freeze_header": true,
-         "columns": ["Date", "Customer Name", "Vehicle", "Service", "Payment Method", "Service Amount", "Tip",
-                     "Total", "Paid?", "Notes"],
-         "validated_columns": ["Date", "Customer Name", "Service", "Payment Method", "Service Amount", "Tip",
-                               "Paid?"]},
-        {"name": "Expenses", "header_row": 1, "freeze_header": true,
-         "columns": ["Date", "Vendor", "Category", "Description", "Payment Method", "Amount", "Notes"],
-         "validated_columns": ["Date", "Category", "Payment Method", "Amount"]},
-        {"name": "Supplies", "header_row": 1, "freeze_header": true,
-         "columns": ["Date", "Supplier", "Product", "Category", "Quantity", "Unit", "Cost per Unit", "Total Cost",
-                     "Jobs per Unit", "Cost per Job", "Notes"],
-         "validated_columns": ["Date", "Category", "Quantity", "Cost per Unit", "Jobs per Unit"]},
-        {"name": "Mileage Log", "header_row": 1, "freeze_header": true,
-         "columns": ["Date", "Business Purpose", "Customer / Job", "From", "To", "Business Miles", "IRS Rate",
-                     "Deduction", "Notes"],
-         "validated_columns": ["Date", "Business Miles"]},
-        {"name": "Customers", "header_row": 1, "freeze_header": true,
-         "columns": ["Customer Name", "Phone", "Email", "Service Address", "Vehicle(s)", "Preferred Service",
-                     "Jobs", "Total Spent", "Unpaid Balance", "Last Visit", "Notes"],
-         "validated_columns": ["Preferred Service"]},
-        {"name": "Summary"},
-        {"name": "IRS Rates", "header_row": 1, "freeze_header": true,
-         "columns": ["Effective From", "Rate per Mile", "Source"],
-         "validated_columns": ["Effective From", "Rate per Mile"]},
-        {"name": "Lists"}
-      ],
-      "rate_table": {"sheet": "IRS Rates", "date_column": "Effective From", "rate_column": "Rate per Mile",
-                     "parameter": "irs_mileage_rates"},
-      "scenarios": [
-        {"name": "empty template shows zero totals",
-         "inputs": [],
-         "expect": [
-           {"sheet": "Dashboard", "label": "Total Income", "value": 0},
-           {"sheet": "Dashboard", "label": "Net Profit", "value": 0},
-           {"sheet": "Dashboard", "label": "Profit Margin", "value": 0},
-           {"sheet": "Dashboard", "label": "Mileage Deduction", "value": 0},
-           {"sheet": "Dashboard", "label": "Tax Set-Aside", "value": 0},
-           {"sheet": "Dashboard", "label": "Tax Set-Aside %", "value": 0.25}
-         ]},
-        {"name": "income $1,000, expenses $250 and supplies $50 give profit $700; other years are excluded",
-         "inputs": [
-           {"sheet": "Dashboard", "label": "Tax Year", "value": 2026},
-           {"sheet": "Jobs", "row": 1, "column": "Date", "value": "2026-03-05"},
-           {"sheet": "Jobs", "row": 1, "column": "Service Amount", "value": 900},
-           {"sheet": "Jobs", "row": 1, "column": "Tip", "value": 100},
-           {"sheet": "Jobs", "row": 2, "column": "Date", "value": "2025-12-31"},
-           {"sheet": "Jobs", "row": 2, "column": "Service Amount", "value": 300},
-           {"sheet": "Jobs", "row": 3, "column": "Date", "value": "2027-01-01"},
-           {"sheet": "Jobs", "row": 3, "column": "Service Amount", "value": 500},
-           {"sheet": "Expenses", "row": 1, "column": "Date", "value": "2026-03-09"},
-           {"sheet": "Expenses", "row": 1, "column": "Category", "value": "Equipment & Tools"},
-           {"sheet": "Expenses", "row": 1, "column": "Amount", "value": 250},
-           {"sheet": "Supplies", "row": 1, "column": "Date", "value": "2026-02-01"},
-           {"sheet": "Supplies", "row": 1, "column": "Category", "value": "Chemicals"},
-           {"sheet": "Supplies", "row": 1, "column": "Quantity", "value": 4},
-           {"sheet": "Supplies", "row": 1, "column": "Cost per Unit", "value": 12.5},
-           {"sheet": "Supplies", "row": 1, "column": "Jobs per Unit", "value": 10}
-         ],
-         "expect": [
-           {"sheet": "Jobs", "row": 1, "column": "Total", "value": 1000},
-           {"sheet": "Supplies", "row": 1, "column": "Total Cost", "value": 50},
-           {"sheet": "Supplies", "row": 1, "column": "Cost per Job", "value": 1.25},
-           {"sheet": "Dashboard", "label": "Total Income", "value": 1000},
-           {"sheet": "Dashboard", "label": "Total Costs", "value": 300},
-           {"sheet": "Dashboard", "label": "Net Profit", "value": 700},
-           {"sheet": "Dashboard", "label": "Profit Margin", "value": 0.7},
-           {"sheet": "Dashboard", "label": "Jobs Completed", "value": 1},
-           {"sheet": "Summary", "label": "Feb", "offset": 4, "value": -50},
-           {"sheet": "Summary", "label": "Mar", "offset": 4, "value": 750},
-           {"sheet": "Summary", "label": "Dec", "offset": 1, "value": 0},
-           {"sheet": "Summary", "label": "Costs by Category", "row_offset": 1, "offset": 1, "value": 50},
-           {"sheet": "Summary", "label": "Costs by Category", "row_offset": 2, "offset": 1, "value": 250},
-           {"sheet": "Summary", "label": "Supplies by Category", "row_offset": 1, "offset": 1, "value": 50}
-         ]},
-        {"name": "100 miles at each 2026 IRS rate; profit after mileage and a 20% tax set-aside",
-         "inputs": [
-           {"sheet": "Dashboard", "label": "Tax Year", "value": 2026},
-           {"sheet": "Dashboard", "label": "Tax Set-Aside %", "value": 0.2},
-           {"sheet": "Dashboard", "label": "Odometer on January 1", "value": 10000},
-           {"sheet": "Dashboard", "label": "Odometer on December 31", "value": 30000},
-           {"sheet": "Jobs", "row": 1, "column": "Date", "value": "2026-03-05"},
-           {"sheet": "Jobs", "row": 1, "column": "Service Amount", "value": 1000},
-           {"sheet": "Expenses", "row": 1, "column": "Date", "value": "2026-03-09"},
-           {"sheet": "Expenses", "row": 1, "column": "Amount", "value": 250},
-           {"sheet": "Supplies", "row": 1, "column": "Date", "value": "2026-02-01"},
-           {"sheet": "Supplies", "row": 1, "column": "Quantity", "value": 4},
-           {"sheet": "Supplies", "row": 1, "column": "Cost per Unit", "value": 12.5},
-           {"sheet": "Mileage Log", "row": 1, "column": "Date", "value": "2026-03-10"},
-           {"sheet": "Mileage Log", "row": 1, "column": "Business Miles", "value": 100},
-           {"sheet": "Mileage Log", "row": 2, "column": "Date", "value": "2026-08-10"},
-           {"sheet": "Mileage Log", "row": 2, "column": "Business Miles", "value": 100},
-           {"sheet": "Mileage Log", "row": 3, "column": "Date", "value": "2025-06-01"},
-           {"sheet": "Mileage Log", "row": 3, "column": "Business Miles", "value": 10}
-         ],
-         "expect": [
-           {"sheet": "Mileage Log", "row": 1, "column": "IRS Rate", "value": 0.725},
-           {"sheet": "Mileage Log", "row": 1, "column": "Deduction", "value": 72.5},
-           {"sheet": "Mileage Log", "row": 2, "column": "Deduction", "value": 76},
-           {"sheet": "Mileage Log", "row": 3, "column": "Deduction", "value": 7},
-           {"sheet": "Dashboard", "label": "Business Miles", "value": 200},
-           {"sheet": "Dashboard", "label": "Mileage Deduction", "value": 148.5},
-           {"sheet": "Dashboard", "label": "Net Profit", "value": 700},
-           {"sheet": "Dashboard", "label": "Profit After Mileage", "value": 551.5},
-           {"sheet": "Dashboard", "label": "Tax Set-Aside", "value": 110.3},
-           {"sheet": "Dashboard", "label": "Take-Home After Set-Aside", "value": 441.2},
-           {"sheet": "Dashboard", "label": "Total Miles Driven", "value": 20000},
-           {"sheet": "Dashboard", "label": "Business Use %", "value": 0.01},
-           {"sheet": "Summary", "label": "Mar", "offset": 6, "value": 677.5},
-           {"sheet": "Summary", "label": "Aug", "offset": 5, "value": 76}
-         ]},
-        {"name": "a loss sets nothing aside for tax",
-         "inputs": [
-           {"sheet": "Jobs", "row": 1, "column": "Date", "value": "2026-04-01"},
-           {"sheet": "Jobs", "row": 1, "column": "Service Amount", "value": 100},
-           {"sheet": "Expenses", "row": 1, "column": "Date", "value": "2026-04-02"},
-           {"sheet": "Expenses", "row": 1, "column": "Amount", "value": 500}
-         ],
-         "expect": [
-           {"sheet": "Dashboard", "label": "Profit After Mileage", "value": -400},
-           {"sheet": "Dashboard", "label": "Tax Set-Aside", "value": 0},
-           {"sheet": "Dashboard", "label": "Take-Home After Set-Aside", "value": -400}
-         ]},
-        {"name": "an edited IRS rate flows through to the deduction",
-         "inputs": [
-           {"sheet": "IRS Rates", "row": 3, "column": "Rate per Mile", "value": 0.8},
-           {"sheet": "Mileage Log", "row": 1, "column": "Date", "value": "2026-08-10"},
-           {"sheet": "Mileage Log", "row": 1, "column": "Business Miles", "value": 100}
-         ],
-         "expect": [
-           {"sheet": "Mileage Log", "row": 1, "column": "Deduction", "value": 80}
-         ]},
-        {"name": "two jobs for one customer roll up to visits, spend, balance and last visit",
-         "inputs": [
-           {"sheet": "Customers", "row": 1, "column": "Customer Name", "value": "Jane Doe"},
-           {"sheet": "Customers", "row": 2, "column": "Customer Name", "value": "Sam Lee"},
-           {"sheet": "Jobs", "row": 1, "column": "Date", "value": "2026-04-01"},
-           {"sheet": "Jobs", "row": 1, "column": "Customer Name", "value": "Jane Doe"},
-           {"sheet": "Jobs", "row": 1, "column": "Service Amount", "value": 150},
-           {"sheet": "Jobs", "row": 1, "column": "Paid?", "value": "Yes"},
-           {"sheet": "Jobs", "row": 2, "column": "Date", "value": "2026-05-02"},
-           {"sheet": "Jobs", "row": 2, "column": "Customer Name", "value": "Jane Doe"},
-           {"sheet": "Jobs", "row": 2, "column": "Service Amount", "value": 80},
-           {"sheet": "Jobs", "row": 2, "column": "Tip", "value": 10},
-           {"sheet": "Jobs", "row": 2, "column": "Paid?", "value": "No"}
-         ],
-         "expect": [
-           {"sheet": "Customers", "row": 1, "column": "Jobs", "value": 2},
-           {"sheet": "Customers", "row": 1, "column": "Total Spent", "value": 240},
-           {"sheet": "Customers", "row": 1, "column": "Unpaid Balance", "value": 90},
-           {"sheet": "Customers", "row": 1, "column": "Last Visit", "value": "2026-05-02"},
-           {"sheet": "Customers", "row": 2, "column": "Jobs", "value": 0},
-           {"sheet": "Customers", "row": 2, "column": "Last Visit", "value": ""},
-           {"sheet": "Customers", "row": 3, "column": "Jobs", "value": ""},
-           {"sheet": "Dashboard", "label": "Unpaid Balance", "value": 90},
-           {"sheet": "Dashboard", "label": "Total Income", "value": 240}
-         ]}
-      ]
-    },
-    {
-      "name": "Instructions.pdf",
-      "kind": "pdf",
-      "min_pages": 3,
-      "max_pages": 10,
-      "required_headings": ["What's Included", "Getting Started", "Using Google Sheets", "Dashboard",
-                            "Jobs and Customers", "Expenses and Supplies", "Mileage Log", "Monthly Summary",
-                            "Tax Time Tips", "Important Notes"]
-    },
-    {
-      "name": "README.txt",
-      "kind": "text",
-      "required_phrases": ["Mobile_Detailer_Business_Tracker.xlsx", "Instructions.pdf", "Dashboard",
-                           "not tax advice"]
-    }
+  {
+   "spec_version": 3,
+   "summary": "Chart fixes: titles above the plot, short horizontal month labels, legend clear of the axis, fixed value-axis scales that read cleanly on an empty workbook, and charts placed side by side without overlap inside a one-page print area that fits a 1920 px screen at 100% zoom."
+  },
+  {
+   "spec_version": 4,
+   "summary": "Same product, now described entirely by the spec (sheets, formulas, charts, PDF and README text) and built by the general spreadsheet builder."
+  }
+ ],
+ "regulated_topic": "tax",
+ "claims_not_to_make": [
+  "IRS-approved",
+  "IRS approved",
+  "audit-proof",
+  "guaranteed deduction",
+  "guaranteed savings",
+  "maximize your refund",
+  "replaces your accountant",
+  "replaces a tax professional"
+ ],
+ "parameters": {
+  "data_rows": 500,
+  "customer_rows": 200,
+  "tax_year": 2026,
+  "tax_set_aside_pct": 0.25,
+  "irs_mileage_rates": [
+   {
+    "effective_from": "2025-01-01",
+    "rate": 0.7,
+    "source": "IRS Notice 2025-5"
+   },
+   {
+    "effective_from": "2026-01-01",
+    "rate": 0.725,
+    "source": "IRS Notice 2026-10"
+   },
+   {
+    "effective_from": "2026-07-01",
+    "rate": 0.76,
+    "source": "IRS Announcement 2026-11"
+   }
+  ],
+  "expense_categories": [
+   "Equipment & Tools",
+   "Fuel",
+   "Vehicle Repairs & Maintenance",
+   "Insurance",
+   "Marketing & Advertising",
+   "Phone & Software",
+   "Water & Utilities",
+   "Licenses & Fees",
+   "Training",
+   "Other"
+  ],
+  "supply_categories": [
+   "Chemicals",
+   "Towels & Microfiber",
+   "Pads & Brushes",
+   "Equipment",
+   "Water & Power",
+   "Safety & PPE",
+   "Other"
+  ],
+  "services": [
+   "Exterior Wash",
+   "Interior Detail",
+   "Full Detail",
+   "Wax & Sealant",
+   "Paint Correction",
+   "Ceramic Coating",
+   "Headlight Restoration",
+   "Engine Bay",
+   "Odor Removal",
+   "Fleet Wash",
+   "Other"
+  ],
+  "payment_methods": [
+   "Cash",
+   "Card",
+   "Venmo",
+   "Zelle",
+   "Cash App",
+   "PayPal",
+   "Check",
+   "Other"
   ]
+ },
+ "features": [
+  {
+   "id": "single_workbook",
+   "description": "Everything in one workbook with tabs",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Jobs"
+   }
+  },
+  {
+   "id": "jobs_log",
+   "description": "Each job is entered once and feeds income, the Dashboard and customer history",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Jobs",
+    "column": "Total"
+   }
+  },
+  {
+   "id": "expense_categories",
+   "description": "Expenses by category",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Expenses",
+    "column": "Category"
+   }
+  },
+  {
+   "id": "supply_cost_per_job",
+   "description": "Supply purchases with material cost per job",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Supplies",
+    "column": "Cost per Job"
+   }
+  },
+  {
+   "id": "mileage_deduction",
+   "description": "Mileage log with the IRS standard mileage deduction",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Mileage Log",
+    "column": "Deduction"
+   }
+  },
+  {
+   "id": "editable_irs_rates",
+   "description": "IRS mileage rates the buyer can update",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "IRS Rates",
+    "column": "Rate per Mile"
+   }
+  },
+  {
+   "id": "customer_history",
+   "description": "Customer list with visits, spend, unpaid balance and last visit",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Customers",
+    "column": "Unpaid Balance"
+   }
+  },
+  {
+   "id": "monthly_summary",
+   "description": "Month-by-month income, costs, profit and mileage",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Summary",
+    "label": "Profit After Mileage"
+   }
+  },
+  {
+   "id": "dashboard_charts",
+   "description": "Dashboard with charts that work in Excel and Google Sheets",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Dashboard",
+    "charts_min": 3
+   }
+  },
+  {
+   "id": "profit_after_mileage",
+   "description": "Profit after the mileage deduction",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Dashboard",
+    "label": "Profit After Mileage"
+   }
+  },
+  {
+   "id": "tax_set_aside",
+   "description": "A user-set tax set-aside % and the amount to put aside",
+   "evidence": {
+    "file": "Mobile_Detailer_Business_Tracker.xlsx",
+    "sheet": "Dashboard",
+    "label": "Tax Set-Aside %"
+   }
+  },
+  {
+   "id": "instructions",
+   "description": "Step-by-step instructions PDF",
+   "evidence": {
+    "file": "Instructions.pdf"
+   }
+  }
+ ],
+ "spreadsheet_rules": {
+  "comment": "Functions available in both Excel (2010+) and Google Sheets. Anything else fails Testing.",
+  "allowed_functions": [
+   "AND",
+   "COUNT",
+   "COUNTIF",
+   "COUNTIFS",
+   "DATE",
+   "IF",
+   "ISNUMBER",
+   "MAX",
+   "MIN",
+   "ROUND",
+   "SUM",
+   "SUMIF",
+   "SUMIFS",
+   "SUMPRODUCT",
+   "VLOOKUP"
+  ],
+  "forbidden_values": [
+   "#REF!",
+   "#DIV/0!",
+   "#NAME?",
+   "#VALUE!",
+   "#N/A",
+   "#NUM!",
+   "#NULL!"
+  ]
+ },
+ "files": [
+  {
+   "name": "Mobile_Detailer_Business_Tracker.xlsx",
+   "kind": "xlsx",
+   "sheets": [
+    {
+     "name": "How to Use",
+     "kind": "how_to",
+     "title": "Mobile Auto Detailer Business Tracker",
+     "intro": "One workbook for a mobile detailing business. Enter each job, expense, supply purchase and trip once; the Dashboard, Summary and Customers tabs fill in from those entries.",
+     "steps": [
+      "Dashboard: type the tax year and your tax set-aside % in the yellow cells (and your odometer readings on January 1 and December 31 if you want your business-use %). Charts and key figures update as you add entries.",
+      "Jobs: add one row per job with the date, customer, vehicle, service, payment method, amount and any tip, and mark Paid? Yes or No. This one row counts as income and updates that customer's history.",
+      "Customers: add each customer once, before their first job, so their name appears in the Jobs dropdown. Jobs, Total Spent, Unpaid Balance and Last Visit fill in automatically.",
+      "Expenses: add business bills and purchases other than detailing supplies, with a category.",
+      "Supplies: add chemicals, towels, pads and equipment here (not on Expenses). They count as costs automatically, and Cost per Job shows what each supply costs you per job.",
+      "Mileage Log: add one row per business trip. IRS Rate and Deduction fill in from the IRS Rates tab.",
+      "Summary: month-by-month income, costs, profit and mileage for the chosen tax year.",
+      "Lists: edit the dropdown choices (services, payment methods, expense and supply categories)."
+     ],
+     "notes": [
+      "Each data tab has room for 500 entries and Customers for 200. Only entries dated in the Dashboard's tax year count toward the totals.",
+      "Profit After Mileage subtracts the IRS standard mileage deduction from Net Profit. If you use the standard mileage rate, don't also enter fuel or vehicle repairs as expenses for that vehicle.",
+      "The tax set-aside is a savings target, not a tax calculation. Many self-employed people put aside 25-30% of profit; ask a tax professional what fits you.",
+      "IRS rates included: $0.70/mile from January 1, 2025; $0.725/mile from January 1, 2026; $0.76/mile from July 1, 2026. Check irs.gov for the current rate and add new ones on the IRS Rates tab.",
+      "Customer details are personal information. Store this file securely and don't share it.",
+      "This product is a record-keeping tool and is not tax advice. Tax rules change and depend on your situation; confirm deductions with a qualified tax professional or irs.gov."
+     ]
+    },
+    {
+     "name": "Dashboard",
+     "kind": "layout",
+     "items": [
+      {
+       "type": "text",
+       "cell": "A1",
+       "text": "Detailing Business Dashboard",
+       "style": "title"
+      },
+      {
+       "type": "text",
+       "cell": "A2",
+       "text": "Type in the yellow cells. Everything else updates from your entries."
+      },
+      {
+       "type": "text",
+       "cell": "A4",
+       "text": "Settings",
+       "style": "subtitle"
+      },
+      {
+       "type": "value",
+       "cell": "B5",
+       "label": "Tax Year",
+       "value": 2026,
+       "format": "integer",
+       "input": true,
+       "validation": "number"
+      },
+      {
+       "type": "value",
+       "cell": "B6",
+       "label": "Tax Set-Aside %",
+       "value": 0.25,
+       "format": "percent",
+       "input": true,
+       "validation": "percent"
+      },
+      {
+       "type": "value",
+       "cell": "B7",
+       "label": "Odometer on January 1",
+       "format": "count",
+       "input": true,
+       "validation": "number"
+      },
+      {
+       "type": "value",
+       "cell": "B8",
+       "label": "Odometer on December 31",
+       "format": "count",
+       "input": true,
+       "validation": "number"
+      },
+      {
+       "type": "header",
+       "cell": "A10",
+       "values": [
+        "Key Figures",
+        ""
+       ]
+      },
+      {
+       "type": "value",
+       "cell": "B11",
+       "label": "Total Income",
+       "formula": "=Summary!$B$19",
+       "format": "currency"
+      },
+      {
+       "type": "value",
+       "cell": "B12",
+       "label": "Total Costs",
+       "formula": "=Summary!$C$19+Summary!$D$19",
+       "format": "currency"
+      },
+      {
+       "type": "value",
+       "cell": "B13",
+       "label": "Net Profit",
+       "formula": "=Summary!$E$19",
+       "format": "currency",
+       "style": "emphasis"
+      },
+      {
+       "type": "value",
+       "cell": "B14",
+       "label": "Profit Margin",
+       "formula": "=IF(B11=0,0,B13/B11)",
+       "format": "percent"
+      },
+      {
+       "type": "value",
+       "cell": "B15",
+       "label": "Mileage Deduction",
+       "formula": "=Summary!$F$19",
+       "format": "currency"
+      },
+      {
+       "type": "value",
+       "cell": "B16",
+       "label": "Profit After Mileage",
+       "formula": "=Summary!$G$19",
+       "format": "currency",
+       "style": "emphasis"
+      },
+      {
+       "type": "value",
+       "cell": "B17",
+       "label": "Tax Set-Aside",
+       "formula": "=ROUND(MAX(0,B16)*B6,2)",
+       "format": "currency"
+      },
+      {
+       "type": "value",
+       "cell": "B18",
+       "label": "Take-Home After Set-Aside",
+       "formula": "=B16-B17",
+       "format": "currency",
+       "style": "emphasis"
+      },
+      {
+       "type": "value",
+       "cell": "B19",
+       "label": "Jobs Completed",
+       "formula": "=COUNTIFS({range:Jobs!Date},\">=\"&DATE({cell:Dashboard!Tax Year},1,1),{range:Jobs!Date},\"<\"&DATE({cell:Dashboard!Tax Year}+1,1,1))",
+       "format": "integer"
+      },
+      {
+       "type": "value",
+       "cell": "B20",
+       "label": "Unpaid Balance",
+       "formula": "=SUMIF({range:Jobs!Paid?},\"No\",{range:Jobs!Total})",
+       "format": "currency"
+      },
+      {
+       "type": "value",
+       "cell": "B21",
+       "label": "Business Miles",
+       "formula": "=SUMIFS({range:Mileage Log!Business Miles},{range:Mileage Log!Date},\">=\"&DATE({cell:Dashboard!Tax Year},1,1),{range:Mileage Log!Date},\"<\"&DATE({cell:Dashboard!Tax Year}+1,1,1))",
+       "format": "number"
+      },
+      {
+       "type": "value",
+       "cell": "B22",
+       "label": "Total Miles Driven",
+       "formula": "=IF(AND(ISNUMBER(B7),ISNUMBER(B8)),B8-B7,\"\")",
+       "format": "count"
+      },
+      {
+       "type": "value",
+       "cell": "B23",
+       "label": "Business Use %",
+       "formula": "=IF(ISNUMBER(B22),IF(B22>0,B21/B22,\"\"),\"\")",
+       "format": "percent"
+      },
+      {
+       "type": "text",
+       "cell": "A25",
+       "text": "Unpaid Balance counts every unpaid job, whatever the year. The tax set-aside is a savings target, not a tax calculation. Many self-employed people put aside 25-30% of profit; ask a tax professional what fits you.",
+       "style": "wrap"
+      },
+      {
+       "type": "merge",
+       "range": "A25:B28"
+      }
+     ],
+     "column_widths": {
+      "A": 30,
+      "B": 16,
+      "C": 3,
+      "D": 10,
+      "E": 10,
+      "F": 10,
+      "G": 10,
+      "H": 10,
+      "I": 10,
+      "J": 10,
+      "K": 10,
+      "L": 10,
+      "M": 10,
+      "N": 10,
+      "O": 10,
+      "P": 10,
+      "Q": 10,
+      "R": 10,
+      "S": 10
+     },
+     "show_gridlines": false,
+     "chart_layout": {
+      "print_area": "A1:S35",
+      "max_right_px": 1440,
+      "comment": "Excel at 100% zoom on a 1920 px screen with 125% Windows scaling shows about 1490 logical px of sheet; checked at 96 and 120 DPI"
+     },
+     "print": {
+      "landscape": true,
+      "fit_one_page": true
+     },
+     "charts": [
+      {
+       "title": "Income vs Costs by Month",
+       "series": 3,
+       "anchor": "D4",
+       "width_px": 500,
+       "height_px": 300,
+       "category_axis": "months",
+       "legend": "t",
+       "value_axis": {
+        "min": 0,
+        "major_unit": 1000,
+        "num_fmt": "\"$\"#,##0"
+       },
+       "data": {
+        "sheet": "Summary",
+        "categories": "A7:A18",
+        "series": [
+         "B6:B18",
+         "C6:C18",
+         "D6:D18"
+        ]
+       }
+      },
+      {
+       "title": "Profit After Mileage by Month",
+       "series": 1,
+       "anchor": "D20",
+       "width_px": 500,
+       "height_px": 300,
+       "category_axis": "months",
+       "value_axis": {
+        "allow_negative": true,
+        "major_unit": 1000,
+        "num_fmt": "\"$\"#,##0"
+       },
+       "comment": "No fixed minimum: a loss month must show below zero, not be cut off",
+       "data": {
+        "sheet": "Summary",
+        "categories": "A7:A18",
+        "series": [
+         "G6:G18"
+        ]
+       }
+      },
+      {
+       "title": "Costs by Category",
+       "series": 1,
+       "anchor": "L4",
+       "width_px": 500,
+       "height_px": 300,
+       "horizontal": true,
+       "value_axis": {
+        "min": 0,
+        "major_unit": 1000,
+        "num_fmt": "\"$\"#,##0"
+       },
+       "data": {
+        "sheet": "Summary",
+        "categories": "I7:I17",
+        "series": [
+         "J6:J17"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "Jobs",
+     "kind": "table",
+     "rows": 500,
+     "columns": [
+      {
+       "name": "Date",
+       "width": 12,
+       "format": "date",
+       "validation": "date"
+      },
+      {
+       "name": "Customer Name",
+       "width": 24,
+       "validation": "list:{range:Customers!Customer Name}"
+      },
+      {
+       "name": "Vehicle",
+       "width": 20
+      },
+      {
+       "name": "Service",
+       "width": 22,
+       "validation": "list:{list:Services}"
+      },
+      {
+       "name": "Payment Method",
+       "width": 16,
+       "validation": "list:{list:Payment Methods}"
+      },
+      {
+       "name": "Service Amount",
+       "width": 15,
+       "format": "currency",
+       "validation": "money"
+      },
+      {
+       "name": "Tip",
+       "width": 11,
+       "format": "currency",
+       "validation": "money"
+      },
+      {
+       "name": "Total",
+       "width": 13,
+       "format": "currency",
+       "formula": "=IF(COUNT({col:Service Amount}{r}:{col:Tip}{r})=0,\"\",SUM({col:Service Amount}{r}:{col:Tip}{r}))"
+      },
+      {
+       "name": "Paid?",
+       "width": 8,
+       "validation": "yesno"
+      },
+      {
+       "name": "Notes",
+       "width": 30
+      }
+     ]
+    },
+    {
+     "name": "Expenses",
+     "kind": "table",
+     "rows": 500,
+     "columns": [
+      {
+       "name": "Date",
+       "width": 12,
+       "format": "date",
+       "validation": "date"
+      },
+      {
+       "name": "Vendor",
+       "width": 22
+      },
+      {
+       "name": "Category",
+       "width": 28,
+       "validation": "list:{list:Expense Categories}"
+      },
+      {
+       "name": "Description",
+       "width": 30
+      },
+      {
+       "name": "Payment Method",
+       "width": 16,
+       "validation": "list:{list:Payment Methods}"
+      },
+      {
+       "name": "Amount",
+       "width": 13,
+       "format": "currency",
+       "validation": "money"
+      },
+      {
+       "name": "Notes",
+       "width": 30
+      }
+     ]
+    },
+    {
+     "name": "Supplies",
+     "kind": "table",
+     "rows": 500,
+     "columns": [
+      {
+       "name": "Date",
+       "width": 12,
+       "format": "date",
+       "validation": "date"
+      },
+      {
+       "name": "Supplier",
+       "width": 20
+      },
+      {
+       "name": "Product",
+       "width": 28
+      },
+      {
+       "name": "Category",
+       "width": 20,
+       "validation": "list:{list:Supply Categories}"
+      },
+      {
+       "name": "Quantity",
+       "width": 10,
+       "validation": "number"
+      },
+      {
+       "name": "Unit",
+       "width": 10
+      },
+      {
+       "name": "Cost per Unit",
+       "width": 13,
+       "format": "currency",
+       "validation": "money"
+      },
+      {
+       "name": "Total Cost",
+       "width": 13,
+       "format": "currency",
+       "formula": "=IF(COUNT({col:Quantity}{r},{col:Cost per Unit}{r})<2,\"\",ROUND({col:Quantity}{r}*{col:Cost per Unit}{r},2))"
+      },
+      {
+       "name": "Jobs per Unit",
+       "width": 12,
+       "validation": "number"
+      },
+      {
+       "name": "Cost per Job",
+       "width": 13,
+       "format": "currency",
+       "formula": "=IF(AND(ISNUMBER({col:Cost per Unit}{r}),ISNUMBER({col:Jobs per Unit}{r})),IF({col:Jobs per Unit}{r}>0,ROUND({col:Cost per Unit}{r}/{col:Jobs per Unit}{r},2),\"\"),\"\")"
+      },
+      {
+       "name": "Notes",
+       "width": 30
+      }
+     ]
+    },
+    {
+     "name": "Mileage Log",
+     "kind": "table",
+     "rows": 500,
+     "columns": [
+      {
+       "name": "Date",
+       "width": 12,
+       "format": "date",
+       "validation": "date"
+      },
+      {
+       "name": "Business Purpose",
+       "width": 28
+      },
+      {
+       "name": "Customer / Job",
+       "width": 22
+      },
+      {
+       "name": "From",
+       "width": 22
+      },
+      {
+       "name": "To",
+       "width": 22
+      },
+      {
+       "name": "Business Miles",
+       "width": 12,
+       "format": "number",
+       "validation": "number"
+      },
+      {
+       "name": "IRS Rate",
+       "width": 11,
+       "format": "rate",
+       "formula": "=IF(ISNUMBER({col:Date}{r}),IF({col:Date}{r}<MIN({range:IRS Rates!Effective From}),\"No rate\",VLOOKUP({col:Date}{r},{area:IRS Rates!Effective From:Rate per Mile},2,TRUE)),\"\")"
+      },
+      {
+       "name": "Deduction",
+       "width": 13,
+       "format": "currency",
+       "formula": "=IF(AND(ISNUMBER({col:Business Miles}{r}),ISNUMBER({col:IRS Rate}{r})),ROUND({col:Business Miles}{r}*{col:IRS Rate}{r},2),\"\")"
+      },
+      {
+       "name": "Notes",
+       "width": 30
+      }
+     ]
+    },
+    {
+     "name": "Customers",
+     "kind": "table",
+     "rows": 200,
+     "columns": [
+      {
+       "name": "Customer Name",
+       "width": 24
+      },
+      {
+       "name": "Phone",
+       "width": 15
+      },
+      {
+       "name": "Email",
+       "width": 26
+      },
+      {
+       "name": "Service Address",
+       "width": 30
+      },
+      {
+       "name": "Vehicle(s)",
+       "width": 24
+      },
+      {
+       "name": "Preferred Service",
+       "width": 20,
+       "validation": "list:{list:Services}"
+      },
+      {
+       "name": "Jobs",
+       "width": 8,
+       "format": "integer",
+       "formula": "=IF({col:Customer Name}{r}=\"\",\"\",COUNTIF({range:Jobs!Customer Name},{col:Customer Name}{r}))"
+      },
+      {
+       "name": "Total Spent",
+       "width": 13,
+       "format": "currency",
+       "formula": "=IF({col:Customer Name}{r}=\"\",\"\",SUMIF({range:Jobs!Customer Name},{col:Customer Name}{r},{range:Jobs!Total}))"
+      },
+      {
+       "name": "Unpaid Balance",
+       "width": 14,
+       "format": "currency",
+       "formula": "=IF({col:Customer Name}{r}=\"\",\"\",SUMIFS({range:Jobs!Total},{range:Jobs!Customer Name},{col:Customer Name}{r},{range:Jobs!Paid?},\"No\"))"
+      },
+      {
+       "name": "Last Visit",
+       "width": 12,
+       "format": "date",
+       "formula": "=IF({col:Customer Name}{r}=\"\",\"\",IF(COUNTIF({range:Jobs!Customer Name},{col:Customer Name}{r})=0,\"\",SUMPRODUCT(MAX(({range:Jobs!Customer Name}={col:Customer Name}{r})*{range:Jobs!Date}))))"
+      },
+      {
+       "name": "Notes",
+       "width": 30
+      }
+     ]
+    },
+    {
+     "name": "Summary",
+     "kind": "layout",
+     "items": [
+      {
+       "type": "text",
+       "cell": "A1",
+       "text": "Monthly Summary",
+       "style": "title"
+      },
+      {
+       "type": "text",
+       "cell": "A2",
+       "text": "Totals for the tax year set on the Dashboard. Supplies count as costs."
+      },
+      {
+       "type": "value",
+       "cell": "B4",
+       "label": "Tax Year",
+       "formula": "={cell:Dashboard!Tax Year}",
+       "format": "integer"
+      },
+      {
+       "type": "header",
+       "cell": "A6",
+       "values": [
+        "Month",
+        "Income",
+        "Expenses",
+        "Supplies",
+        "Net Profit",
+        "Mileage Deduction",
+        "Profit After Mileage"
+       ]
+      },
+      {
+       "type": "grid",
+       "first_row": 7,
+       "labels": [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec"
+       ],
+       "columns": [
+        {
+         "col": "A",
+         "labels": true
+        },
+        {
+         "col": "B",
+         "formula": "=SUMIFS({range:Jobs!Total},{range:Jobs!Date},\">=\"&DATE({cell:Dashboard!Tax Year},{i},1),{range:Jobs!Date},\"<\"&DATE({cell:Dashboard!Tax Year},{i_next},1))",
+         "format": "currency"
+        },
+        {
+         "col": "C",
+         "formula": "=SUMIFS({range:Expenses!Amount},{range:Expenses!Date},\">=\"&DATE({cell:Dashboard!Tax Year},{i},1),{range:Expenses!Date},\"<\"&DATE({cell:Dashboard!Tax Year},{i_next},1))",
+         "format": "currency"
+        },
+        {
+         "col": "D",
+         "formula": "=SUMIFS({range:Supplies!Total Cost},{range:Supplies!Date},\">=\"&DATE({cell:Dashboard!Tax Year},{i},1),{range:Supplies!Date},\"<\"&DATE({cell:Dashboard!Tax Year},{i_next},1))",
+         "format": "currency"
+        },
+        {
+         "col": "E",
+         "formula": "=B{r}-C{r}-D{r}",
+         "format": "currency"
+        },
+        {
+         "col": "F",
+         "formula": "=SUMIFS({range:Mileage Log!Deduction},{range:Mileage Log!Date},\">=\"&DATE({cell:Dashboard!Tax Year},{i},1),{range:Mileage Log!Date},\"<\"&DATE({cell:Dashboard!Tax Year},{i_next},1))",
+         "format": "currency"
+        },
+        {
+         "col": "G",
+         "formula": "=E{r}-F{r}",
+         "format": "currency"
+        }
+       ],
+       "total": {
+        "row": 19,
+        "label": "Total",
+        "label_col": "A",
+        "columns": [
+         "B",
+         "C",
+         "D",
+         "E",
+         "F",
+         "G"
+        ],
+        "bold": true
+       }
+      },
+      {
+       "type": "header",
+       "cell": "I6",
+       "values": [
+        "Costs by Category",
+        "Amount"
+       ]
+      },
+      {
+       "type": "text",
+       "cell": "I7",
+       "text": "Supplies",
+       "style": "label"
+      },
+      {
+       "type": "value",
+       "cell": "J7",
+       "formula": "=D19",
+       "format": "currency"
+      },
+      {
+       "type": "grid",
+       "first_row": 8,
+       "count": 30,
+       "columns": [
+        {
+         "col": "I",
+         "formula": "=IF(Lists!${listcol:Expense Categories}{i_next}=\"\",\"\",Lists!${listcol:Expense Categories}{i_next})"
+        },
+        {
+         "col": "J",
+         "formula": "=IF(I{r}=\"\",\"\",SUMIFS({range:Expenses!Amount},{range:Expenses!Category},I{r},{range:Expenses!Date},\">=\"&DATE({cell:Dashboard!Tax Year},1,1),{range:Expenses!Date},\"<\"&DATE({cell:Dashboard!Tax Year}+1,1,1)))",
+         "format": "currency"
+        }
+       ]
+      },
+      {
+       "type": "header",
+       "cell": "L6",
+       "values": [
+        "Supplies by Category",
+        "Amount"
+       ]
+      },
+      {
+       "type": "grid",
+       "first_row": 7,
+       "count": 30,
+       "columns": [
+        {
+         "col": "L",
+         "formula": "=IF(Lists!${listcol:Supply Categories}{i_next}=\"\",\"\",Lists!${listcol:Supply Categories}{i_next})"
+        },
+        {
+         "col": "M",
+         "formula": "=IF(L{r}=\"\",\"\",SUMIFS({range:Supplies!Total Cost},{range:Supplies!Category},L{r},{range:Supplies!Date},\">=\"&DATE({cell:Dashboard!Tax Year},1,1),{range:Supplies!Date},\"<\"&DATE({cell:Dashboard!Tax Year}+1,1,1)))",
+         "format": "currency"
+        }
+       ]
+      }
+     ],
+     "column_widths": {
+      "A": 14,
+      "B": 13,
+      "C": 13,
+      "D": 13,
+      "E": 13,
+      "F": 13,
+      "G": 15,
+      "H": 3,
+      "I": 30,
+      "J": 14,
+      "K": 3,
+      "L": 24,
+      "M": 14
+     },
+     "freeze_panes": "B7",
+     "show_gridlines": false
+    },
+    {
+     "name": "IRS Rates",
+     "kind": "table",
+     "rows": 20,
+     "columns": [
+      {
+       "name": "Effective From",
+       "width": 16,
+       "format": "date",
+       "validation": "date"
+      },
+      {
+       "name": "Rate per Mile",
+       "width": 15,
+       "format": "rate",
+       "validation": "number"
+      },
+      {
+       "name": "Source",
+       "width": 40
+      }
+     ],
+     "prefill": {
+      "param": "irs_mileage_rates",
+      "fields": {
+       "Effective From": "effective_from",
+       "Rate per Mile": "rate",
+       "Source": "source"
+      }
+     }
+    },
+    {
+     "name": "Lists",
+     "kind": "lists",
+     "length": 30,
+     "lists": {
+      "Services": {
+       "param": "services"
+      },
+      "Payment Methods": {
+       "param": "payment_methods"
+      },
+      "Expense Categories": {
+       "param": "expense_categories"
+      },
+      "Supply Categories": {
+       "param": "supply_categories"
+      }
+     }
+    }
+   ],
+   "rate_table": {
+    "sheet": "IRS Rates",
+    "date_column": "Effective From",
+    "rate_column": "Rate per Mile",
+    "parameter": "irs_mileage_rates"
+   },
+   "scenarios": [
+    {
+     "name": "empty template shows zero totals",
+     "inputs": [],
+     "expect": [
+      {
+       "sheet": "Dashboard",
+       "label": "Total Income",
+       "value": 0
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Net Profit",
+       "value": 0
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Profit Margin",
+       "value": 0
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Mileage Deduction",
+       "value": 0
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Tax Set-Aside",
+       "value": 0
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Tax Set-Aside %",
+       "value": 0.25
+      }
+     ]
+    },
+    {
+     "name": "income $1,000, expenses $250 and supplies $50 give profit $700; other years are excluded",
+     "inputs": [
+      {
+       "sheet": "Dashboard",
+       "label": "Tax Year",
+       "value": 2026
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-03-05"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Service Amount",
+       "value": 900
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Tip",
+       "value": 100
+      },
+      {
+       "sheet": "Jobs",
+       "row": 2,
+       "column": "Date",
+       "value": "2025-12-31"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 2,
+       "column": "Service Amount",
+       "value": 300
+      },
+      {
+       "sheet": "Jobs",
+       "row": 3,
+       "column": "Date",
+       "value": "2027-01-01"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 3,
+       "column": "Service Amount",
+       "value": 500
+      },
+      {
+       "sheet": "Expenses",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-03-09"
+      },
+      {
+       "sheet": "Expenses",
+       "row": 1,
+       "column": "Category",
+       "value": "Equipment & Tools"
+      },
+      {
+       "sheet": "Expenses",
+       "row": 1,
+       "column": "Amount",
+       "value": 250
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-02-01"
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Category",
+       "value": "Chemicals"
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Quantity",
+       "value": 4
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Cost per Unit",
+       "value": 12.5
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Jobs per Unit",
+       "value": 10
+      }
+     ],
+     "expect": [
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Total",
+       "value": 1000
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Total Cost",
+       "value": 50
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Cost per Job",
+       "value": 1.25
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Total Income",
+       "value": 1000
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Total Costs",
+       "value": 300
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Net Profit",
+       "value": 700
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Profit Margin",
+       "value": 0.7
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Jobs Completed",
+       "value": 1
+      },
+      {
+       "sheet": "Summary",
+       "label": "Feb",
+       "offset": 4,
+       "value": -50
+      },
+      {
+       "sheet": "Summary",
+       "label": "Mar",
+       "offset": 4,
+       "value": 750
+      },
+      {
+       "sheet": "Summary",
+       "label": "Dec",
+       "offset": 1,
+       "value": 0
+      },
+      {
+       "sheet": "Summary",
+       "label": "Costs by Category",
+       "row_offset": 1,
+       "offset": 1,
+       "value": 50
+      },
+      {
+       "sheet": "Summary",
+       "label": "Costs by Category",
+       "row_offset": 2,
+       "offset": 1,
+       "value": 250
+      },
+      {
+       "sheet": "Summary",
+       "label": "Supplies by Category",
+       "row_offset": 1,
+       "offset": 1,
+       "value": 50
+      }
+     ]
+    },
+    {
+     "name": "100 miles at each 2026 IRS rate; profit after mileage and a 20% tax set-aside",
+     "inputs": [
+      {
+       "sheet": "Dashboard",
+       "label": "Tax Year",
+       "value": 2026
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Tax Set-Aside %",
+       "value": 0.2
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Odometer on January 1",
+       "value": 10000
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Odometer on December 31",
+       "value": 30000
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-03-05"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Service Amount",
+       "value": 1000
+      },
+      {
+       "sheet": "Expenses",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-03-09"
+      },
+      {
+       "sheet": "Expenses",
+       "row": 1,
+       "column": "Amount",
+       "value": 250
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-02-01"
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Quantity",
+       "value": 4
+      },
+      {
+       "sheet": "Supplies",
+       "row": 1,
+       "column": "Cost per Unit",
+       "value": 12.5
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-03-10"
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 1,
+       "column": "Business Miles",
+       "value": 100
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 2,
+       "column": "Date",
+       "value": "2026-08-10"
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 2,
+       "column": "Business Miles",
+       "value": 100
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 3,
+       "column": "Date",
+       "value": "2025-06-01"
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 3,
+       "column": "Business Miles",
+       "value": 10
+      }
+     ],
+     "expect": [
+      {
+       "sheet": "Mileage Log",
+       "row": 1,
+       "column": "IRS Rate",
+       "value": 0.725
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 1,
+       "column": "Deduction",
+       "value": 72.5
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 2,
+       "column": "Deduction",
+       "value": 76
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 3,
+       "column": "Deduction",
+       "value": 7
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Business Miles",
+       "value": 200
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Mileage Deduction",
+       "value": 148.5
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Net Profit",
+       "value": 700
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Profit After Mileage",
+       "value": 551.5
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Tax Set-Aside",
+       "value": 110.3
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Take-Home After Set-Aside",
+       "value": 441.2
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Total Miles Driven",
+       "value": 20000
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Business Use %",
+       "value": 0.01
+      },
+      {
+       "sheet": "Summary",
+       "label": "Mar",
+       "offset": 6,
+       "value": 677.5
+      },
+      {
+       "sheet": "Summary",
+       "label": "Aug",
+       "offset": 5,
+       "value": 76
+      }
+     ]
+    },
+    {
+     "name": "a loss sets nothing aside for tax",
+     "inputs": [
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-04-01"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Service Amount",
+       "value": 100
+      },
+      {
+       "sheet": "Expenses",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-04-02"
+      },
+      {
+       "sheet": "Expenses",
+       "row": 1,
+       "column": "Amount",
+       "value": 500
+      }
+     ],
+     "expect": [
+      {
+       "sheet": "Dashboard",
+       "label": "Profit After Mileage",
+       "value": -400
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Tax Set-Aside",
+       "value": 0
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Take-Home After Set-Aside",
+       "value": -400
+      }
+     ]
+    },
+    {
+     "name": "an edited IRS rate flows through to the deduction",
+     "inputs": [
+      {
+       "sheet": "IRS Rates",
+       "row": 3,
+       "column": "Rate per Mile",
+       "value": 0.8
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-08-10"
+      },
+      {
+       "sheet": "Mileage Log",
+       "row": 1,
+       "column": "Business Miles",
+       "value": 100
+      }
+     ],
+     "expect": [
+      {
+       "sheet": "Mileage Log",
+       "row": 1,
+       "column": "Deduction",
+       "value": 80
+      }
+     ]
+    },
+    {
+     "name": "two jobs for one customer roll up to visits, spend, balance and last visit",
+     "inputs": [
+      {
+       "sheet": "Customers",
+       "row": 1,
+       "column": "Customer Name",
+       "value": "Jane Doe"
+      },
+      {
+       "sheet": "Customers",
+       "row": 2,
+       "column": "Customer Name",
+       "value": "Sam Lee"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Date",
+       "value": "2026-04-01"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Customer Name",
+       "value": "Jane Doe"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Service Amount",
+       "value": 150
+      },
+      {
+       "sheet": "Jobs",
+       "row": 1,
+       "column": "Paid?",
+       "value": "Yes"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 2,
+       "column": "Date",
+       "value": "2026-05-02"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 2,
+       "column": "Customer Name",
+       "value": "Jane Doe"
+      },
+      {
+       "sheet": "Jobs",
+       "row": 2,
+       "column": "Service Amount",
+       "value": 80
+      },
+      {
+       "sheet": "Jobs",
+       "row": 2,
+       "column": "Tip",
+       "value": 10
+      },
+      {
+       "sheet": "Jobs",
+       "row": 2,
+       "column": "Paid?",
+       "value": "No"
+      }
+     ],
+     "expect": [
+      {
+       "sheet": "Customers",
+       "row": 1,
+       "column": "Jobs",
+       "value": 2
+      },
+      {
+       "sheet": "Customers",
+       "row": 1,
+       "column": "Total Spent",
+       "value": 240
+      },
+      {
+       "sheet": "Customers",
+       "row": 1,
+       "column": "Unpaid Balance",
+       "value": 90
+      },
+      {
+       "sheet": "Customers",
+       "row": 1,
+       "column": "Last Visit",
+       "value": "2026-05-02"
+      },
+      {
+       "sheet": "Customers",
+       "row": 2,
+       "column": "Jobs",
+       "value": 0
+      },
+      {
+       "sheet": "Customers",
+       "row": 2,
+       "column": "Last Visit",
+       "value": ""
+      },
+      {
+       "sheet": "Customers",
+       "row": 3,
+       "column": "Jobs",
+       "value": ""
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Unpaid Balance",
+       "value": 90
+      },
+      {
+       "sheet": "Dashboard",
+       "label": "Total Income",
+       "value": 240
+      }
+     ]
+    }
+   ],
+   "role": "template"
+  },
+  {
+   "name": "Instructions.pdf",
+   "kind": "pdf",
+   "min_pages": 3,
+   "max_pages": 10,
+   "required_headings": [
+    "What's Included",
+    "Getting Started",
+    "Using Google Sheets",
+    "Dashboard",
+    "Jobs and Customers",
+    "Expenses and Supplies",
+    "Mileage Log",
+    "Monthly Summary",
+    "Tax Time Tips",
+    "Important Notes"
+   ],
+   "title": "Mobile Auto Detailer Business Tracker",
+   "footer": "Mobile Auto Detailer Business Tracker",
+   "blocks": [
+    {
+     "p": "Instructions for the Mobile Detailer Business Tracker: one workbook for jobs, customers, expenses, supplies and mileage, with a Dashboard that shows how the business is doing. Built for one-person and small mobile detailing businesses that want clean records without accounting software."
+    },
+    {
+     "heading": "What's Included"
+    },
+    {
+     "table": [
+      [
+       "File",
+       "What it is"
+      ],
+      [
+       "Mobile_Detailer_Business_Tracker.xlsx",
+       "The tracker workbook: Dashboard, Jobs, Expenses, Supplies, Mileage Log, Customers, Summary, IRS Rates and Lists tabs"
+      ],
+      [
+       "Instructions.pdf",
+       "This guide"
+      ],
+      [
+       "README.txt",
+       "A short quick-start note"
+      ]
+     ],
+     "widths": [
+      3.2,
+      3.5
+     ]
+    },
+    {
+     "p": "The workbook's tabs:"
+    },
+    {
+     "table": [
+      [
+       "Tab",
+       "What you do there"
+      ],
+      [
+       "How to Use",
+       "A one-page reminder of these steps"
+      ],
+      [
+       "Dashboard",
+       "Set the tax year and tax set-aside %; see key figures and three charts"
+      ],
+      [
+       "Jobs",
+       "Enter every job once: it counts as income and updates the customer's history"
+      ],
+      [
+       "Expenses",
+       "Business bills and purchases other than detailing supplies"
+      ],
+      [
+       "Supplies",
+       "Chemicals, towels, pads and equipment, with cost per job"
+      ],
+      [
+       "Mileage Log",
+       "Business trips and the IRS standard mileage deduction"
+      ],
+      [
+       "Customers",
+       "Contact details; visits, spend, unpaid balance and last visit fill in"
+      ],
+      [
+       "Summary",
+       "Month-by-month income, costs, profit and mileage"
+      ],
+      [
+       "IRS Rates",
+       "Standard mileage rates by date; add new ones here"
+      ],
+      [
+       "Lists",
+       "The choices in every dropdown"
+      ]
+     ],
+     "widths": [
+      1.5,
+      5.2
+     ]
+    },
+    {
+     "heading": "Getting Started"
+    },
+    {
+     "bullets": [
+      "Unzip the download and save the files to a folder you back up, such as OneDrive, Google Drive or Dropbox.",
+      "Open Mobile_Detailer_Business_Tracker.xlsx in Microsoft Excel (2010 or newer, Windows or Mac). It opens on the **How to Use** tab.",
+      "Go to the **Dashboard** and type your tax year and tax set-aside % in the yellow cells.",
+      "Type only in white table cells and yellow cells. Grey cells hold formulas and calculate on their own.",
+      "Enter dates as month/day/year, for example 3/15/2026, and amounts without a $ sign."
+     ],
+     "numbered": true
+    },
+    {
+     "heading": "Using Google Sheets"
+    },
+    {
+     "bullets": [
+      "In Google Drive choose **New > File upload** and upload the .xlsx file.",
+      "Open it, then choose **File > Save as Google Sheets** so edits save automatically.",
+      "Formulas, dropdowns, frozen headers and the Dashboard charts carry over. Google Sheets may draw the charts with its own fonts and colors."
+     ]
+    },
+    {
+     "heading": "Dashboard"
+    },
+    {
+     "p": "The Dashboard is where you set up the year and check results. **Tax Year** decides which entries count. **Tax Set-Aside %** is the share of profit you want to put aside for taxes. Add your odometer readings on January 1 and December 31 to see total miles and your business-use percentage."
+    },
+    {
+     "p": "Key figures: total income, total costs (expenses plus supplies), net profit and margin, the mileage deduction, **Profit After Mileage** (net profit minus the mileage deduction), the **Tax Set-Aside** amount, take-home after the set-aside, jobs completed and unpaid balances. The three charts show income against costs by month, profit after mileage by month, and costs by category."
+    },
+    {
+     "p": "Nothing is set aside when profit after mileage is zero or negative. The tax set-aside is a savings target, not a tax calculation. Many self-employed people put aside 25-30% of profit; ask a tax professional what fits you."
+    },
+    {
+     "p": "The chart axes count up in steps of $1,000. If your months run well above $15,000 and the axis labels look crowded, right-click the numbers on the axis, choose **Format Axis** and raise the **Major** unit (for example to 5000)."
+    },
+    {
+     "heading": "Jobs and Customers"
+    },
+    {
+     "p": "Add each customer once on the **Customers** tab. Then record every job on the **Jobs** tab, picking the customer from the dropdown so names match exactly. Enter the service amount and any tip; Total adds them. Mark **Paid?** Yes or No. That single row is your income record and also updates the customer's job count, total spent, unpaid balance and last visit, so there is no second log to keep. Sort Customers by Last Visit to find people due for a maintenance detail."
+    },
+    {
+     "heading": "Expenses and Supplies"
+    },
+    {
+     "p": "Use **Supplies** for detailing chemicals, towels, pads and equipment: quantity, unit and cost per unit, plus **Jobs per Unit** (how many jobs one bottle, gallon or pack lasts). Cost per Job shows what that supply costs you each time. Supplies count as costs automatically, so don't enter them on Expenses as well."
+    },
+    {
+     "p": "Use **Expenses** for everything else: insurance, marketing, phone and software, licenses, water and so on. Pick a category so the Summary and Dashboard can total costs by category."
+    },
+    {
+     "heading": "Mileage Log"
+    },
+    {
+     "p": "Log every business trip: to a customer, between customers, to buy supplies or to the bank. Enter the date, purpose, where you went and the business miles. The log looks up the IRS standard mileage rate in effect on that date and calculates the deduction. Rates included on the **IRS Rates** tab:"
+    },
+    {
+     "bullets": [
+      "$0.70 per mile from January 1, 2025 (IRS Notice 2025-5)",
+      "$0.725 per mile from January 1, 2026 (IRS Notice 2026-10)",
+      "$0.76 per mile from July 1, 2026 (IRS Announcement 2026-11)"
+     ]
+    },
+    {
+     "p": "When the IRS announces a new rate, add a row to the IRS Rates tab with the date it takes effect. Keep the rows in date order, oldest first. A trip showing \"No rate\" is dated before the first rate listed."
+    },
+    {
+     "heading": "Monthly Summary"
+    },
+    {
+     "p": "The **Summary** tab shows income, expenses, supplies, net profit, mileage deduction and profit after mileage for each month of the Dashboard's tax year, with year totals. Beside it are costs by category and supplies by category. The Dashboard charts read from this tab."
+    },
+    {
+     "heading": "Tax Time Tips"
+    },
+    {
+     "bullets": [
+      "Set the tax year on the Dashboard and give the totals to your tax preparer.",
+      "Keep receipts for expenses and supplies. A tracker supports your records but doesn't replace them.",
+      "Choose either the standard mileage rate or actual vehicle expenses for a vehicle, not both. If you use the mileage rate, don't also enter fuel and repairs for that vehicle as expenses.",
+      "Back up the workbook regularly, and keep a copy of each finished year."
+     ]
+    },
+    {
+     "heading": "Important Notes"
+    },
+    {
+     "p": "This product is a record-keeping tool and is not tax advice. Tax rules change and depend on your situation; confirm deductions with a qualified tax professional or irs.gov."
+    },
+    {
+     "p": "IRS mileage rates are included as published when this version was built. Check irs.gov for the current rate before filing."
+    },
+    {
+     "p": "Customer contact details are personal information. Keep the workbook private and don't share it."
+    }
+   ]
+  },
+  {
+   "name": "README.txt",
+   "kind": "text",
+   "required_phrases": [
+    "Mobile_Detailer_Business_Tracker.xlsx",
+    "Instructions.pdf",
+    "Dashboard",
+    "not tax advice"
+   ],
+   "lines": [
+    "MOBILE AUTO DETAILER BUSINESS TRACKER",
+    "=====================================",
+    "",
+    "Thank you for your purchase. This download contains:",
+    "",
+    "  Mobile_Detailer_Business_Tracker.xlsx  The tracker: Dashboard with charts, Jobs, Expenses,",
+    "                                         Supplies, Mileage Log, Customers, Summary",
+    "  Instructions.pdf                       Step-by-step guide (start here)",
+    "  README.txt                             This note",
+    "",
+    "QUICK START",
+    "1. Save these files somewhere you back up.",
+    "2. Open the workbook in Excel 2010 or newer, or upload it to Google Drive and open it",
+    "   with Google Sheets.",
+    "3. On the Dashboard, type your tax year and tax set-aside % in the yellow cells.",
+    "4. Enter each job, expense, supply purchase and trip once. Type in white table cells",
+    "   and yellow cells; grey cells calculate automatically.",
+    "",
+    "Each tab holds 500 entries (Customers holds 200). Mileage rates are on the",
+    "\"IRS Rates\" tab; add new rates there when the IRS announces them.",
+    "",
+    "This product is a record-keeping tool and is not tax advice. Confirm deductions with a",
+    "qualified tax professional or irs.gov."
+   ]
+  }
+ ]
 }
