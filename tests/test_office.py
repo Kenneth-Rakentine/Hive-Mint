@@ -60,3 +60,17 @@ def test_the_office_has_its_own_icon(settings):
     with TestClient(create_app(settings)) as client:
         icon = client.get("/favicon.ico")
         assert icon.status_code == 200 and icon.content[:4] == b"\x00\x00\x01\x00"
+
+
+def test_a_console_less_start_logs_to_a_file(tmp_path, monkeypatch):
+    import sys
+
+    from app.cli import ensure_output_streams
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    path = ensure_output_streams(tmp_path)
+    print("office started")
+    sys.stderr.write("an error\n")
+    sys.stdout.flush()
+    assert path.read_text(encoding="utf-8") == "office started\nan error\n"
+    sys.stdout.close()

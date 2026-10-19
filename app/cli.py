@@ -501,7 +501,21 @@ def cmd_office(args) -> int:
     server.run()
     return 0
 
+def ensure_output_streams(log_dir: Path) -> Path | None:
+    """pythonw.exe (the Desktop shortcut) starts with no console, so sys.stdout and sys.stderr are None and
+    anything that prints or logs (rich, uvicorn) fails before the office opens. Send both to a log file."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return None
+    log_dir.mkdir(parents=True, exist_ok=True)
+    path = log_dir / "office.log"
+    stream = open(path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115 - lives as long as the process
+    sys.stdout = sys.stdout or stream
+    sys.stderr = sys.stderr or stream
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
+    ensure_output_streams(Path(__file__).resolve().parents[1] / "logs")
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="Hive-Mint command line")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init-db", help="create the SQLite database").set_defaults(func=cmd_init_db)
