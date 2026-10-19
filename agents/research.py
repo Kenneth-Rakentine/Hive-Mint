@@ -162,6 +162,9 @@ def run_niche_research(session: Session, settings: Settings, niche: str, *,
               started_at=utcnow(), input_json=json.dumps({"niche": niche}))
     session.add(job)
     log_event(session, "job.started", actor=ACTOR, job=job, message=f"Niche research: {niche}")
+    log_event(session, "research.started", actor=ACTOR, job=job,
+              message=f"Researching in depth: {niche} (web search; this takes several minutes)")
+    session.commit()  # the office shows the Research Hall at work while the run is going
     problems: list[str] = []
     last_error = ""
     try:

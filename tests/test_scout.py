@@ -100,3 +100,19 @@ def test_scout_is_due_weekly(settings, session):
                     status=JobStatus.SUCCEEDED, created_at=now - timedelta(days=2)))
     session.flush()
     assert not scout_due(session, now) and scout_due(session, now + timedelta(days=6))
+
+
+def test_the_office_sees_the_scout_at_work_while_it_runs(settings, session, engine, fake_claude):
+    from app.db import make_session_factory
+    from app.office import office_state
+
+    def reply(cmd, prompt):
+        with make_session_factory(engine)() as other:  # another connection, like the office server
+            hall = next(b for b in office_state(other, settings, disk={})["buildings"] if b["id"] == "research")
+            seen.append(len(hall["running"]))
+        return {"structured_output": scout_answer()}
+
+    seen = []
+    fake_claude.replies = [reply]
+    run_scout(session, settings)
+    assert seen == [1]

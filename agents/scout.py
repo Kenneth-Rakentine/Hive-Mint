@@ -177,6 +177,9 @@ def run_scout(session: Session, settings: Settings, *, provider: ClaudeHeadless 
               started_at=utcnow(), input_json="{}")
     session.add(job)
     log_event(session, "job.started", actor=ACTOR, job=job, message="Niche scout")
+    log_event(session, "research.started", actor=ACTOR, job=job,
+              message="Scouting for new niches (web search; this takes several minutes)")
+    session.commit()  # the office shows the Research Hall at work while the run is going
     known = known_niches(session)
     exclude = "\n".join(f"  - {n}" for n in known) or "  (none yet)"
     problems: list[str] = []
