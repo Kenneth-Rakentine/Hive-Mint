@@ -60,6 +60,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def office() -> FileResponse:
         return FileResponse(office_page, media_type="text/html")
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon() -> FileResponse:
+        return FileResponse(office_page.with_name("hivemint.ico"), media_type="image/x-icon")
+
     @app.get("/office/state")
     def office_data() -> dict:
         _last_seen[0] = time.monotonic()

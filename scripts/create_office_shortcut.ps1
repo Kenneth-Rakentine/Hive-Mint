@@ -13,7 +13,8 @@ $shortcut.TargetPath = $pythonw
 $shortcut.Arguments = "-m app.cli office --close-when-idle"
 $shortcut.WorkingDirectory = $repo
 $shortcut.Description = "Open the Hive-Mint pixel office"
-$edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
-if (Test-Path $edge) { $shortcut.IconLocation = "$edge,0" }
+# The purple moon and blackletter "Hm" from the office title bar.
+$icon = Join-Path $repo "app\static\hivemint.ico"
+if (Test-Path $icon) { $shortcut.IconLocation = "$icon,0" }
 $shortcut.Save()
 "Created $link"

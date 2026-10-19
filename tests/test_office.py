@@ -54,3 +54,9 @@ def test_the_office_page_and_its_data_are_served(settings):
         data = client.get("/office/state").json()
         assert {b["id"] for b in data["buildings"]} == {b[0] for b in BUILDINGS}
         assert data["resources"]["claude_runs_cap"] == settings.max_claude_runs_per_day
+
+
+def test_the_office_has_its_own_icon(settings):
+    with TestClient(create_app(settings)) as client:
+        icon = client.get("/favicon.ico")
+        assert icon.status_code == 200 and icon.content[:4] == b"\x00\x00\x01\x00"
