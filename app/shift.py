@@ -30,6 +30,7 @@ from agents import red_team
 from agents.finance import select_opportunities
 from agents.operations import HARD_STOPS, OperationsManager
 from agents.research import ResearchFailed, opportunity_for, run_niche_research
+from agents.scout import ScoutFailed, next_candidate, run_scout, scout_due
 from app.db import utcnow
 from app.lifecycle import log_event
 from app.models import AgentRun, Job, Opportunity, Product, ResearchRecord, Shift
@@ -63,6 +64,7 @@ class ShiftRunner:
     ignore_window: bool = False
     ops: OperationsManager | None = None
     researcher: Callable = run_niche_research
+    scout: Callable = run_scout
     reviewer: Callable = red_team.run_headless
     subscription_check: Callable = check_subscription
     log: list[dict] = field(default_factory=list)
@@ -138,18 +140,34 @@ class ShiftRunner:
     # ------------------------------------------------------------------ steps
 
     def _do_research(self) -> tuple[int, str]:
+        """Pick one niche and research it in depth. The best NEW scout candidate comes first; when none is
+        left and the last scout is a week old, scout for new ones; the seed niches are the fallback."""
+        note = ""
+        candidate = next_candidate(self.session)
+        if candidate is None and scout_due(self.session, self.now()):
+            try:
+                found = self.scout(self.session, self.settings)
+                note = f"scouted {len(found)} new niche(s); "
+            except ScoutFailed as error:
+                self.errors.append(f"scout: {error}")
+                note = "scout failed; "
+            self.session.commit()
+            candidate = next_candidate(self.session)
         since = self.now() - timedelta(days=RESEARCH_REFRESH_DAYS)
         recent = set(self.session.scalars(select(ResearchRecord.niche).where(ResearchRecord.created_at >= since)))
-        niche = next((n for n in SEED_NICHES if n not in recent), None)
+        niche = candidate.niche if candidate is not None else next((n for n in SEED_NICHES if n not in recent), None)
         if niche is None:
-            return 0, f"every seed niche was researched in the last {RESEARCH_REFRESH_DAYS} days"
+            return 0, note + f"no strong scout candidate, and every seed niche was researched in the last " \
+                             f"{RESEARCH_REFRESH_DAYS} days"
         try:
             record = self.researcher(self.session, self.settings, niche)
         except ResearchFailed as error:
             self.errors.append(f"research: {error}")
-            return 0, f"research failed for '{niche}': {error}"
+            if candidate is not None:  # don't retry the same candidate every shift
+                candidate.status = candidate.SKIPPED
+            return 0, note + f"research failed for '{niche}': {error}"
         count = self.session.scalar(select(func.count(Opportunity.id)).where(Opportunity.research_id == record.id))
-        return 1, f"'{niche}': {count} opportunities, {record.confidence} confidence (record #{record.id})"
+        return 1, note + f"'{niche}': {count} opportunities, {record.confidence} confidence (record #{record.id})"
 
     def _do_finance(self) -> tuple[int, str]:
         created = select_opportunities(self.session, self.settings)

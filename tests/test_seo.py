@@ -109,6 +109,8 @@ def test_upload_rules_follow_the_marketplace_file_limits(tmp_path):
         (path := tmp_path / f"f{i}.pdf").write_bytes(b"%PDF")
         small.append(path)
     assert any("6 downloadable files" in p for p in upload_problems(small))
+    (spaced := tmp_path / "My Tracker.zip").write_bytes(b"PK")
+    assert any("file names must be" in p for p in upload_problems([spaced]))
 
 
 # --------------------------------------------------------------------------- images

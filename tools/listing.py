@@ -122,6 +122,11 @@ def upload_problems(paths: list[Path]) -> list[str]:
     for path in paths:
         if path.suffix.lower() not in ACCEPTED_TYPES:
             problems.append(f"{path.name}: {path.suffix} files cannot be uploaded; put it in the ZIP")
+        # Etsy: up to 70 characters of letters, numbers, periods, underscores and hyphens, and a file
+        # can't be renamed after upload (help.etsy.com, "How to Add Files to a Digital Listing", 2026-10-19).
+        if len(path.name) > 70 or not re.fullmatch(r"[A-Za-z0-9._-]+", path.name):
+            problems.append(f"{path.name}: file names must be at most 70 letters, numbers, periods, underscores "
+                            "or hyphens")
         if not path.is_file():
             problems.append(f"{path.name} is missing")
         elif path.stat().st_size > MAX_FILE_BYTES:

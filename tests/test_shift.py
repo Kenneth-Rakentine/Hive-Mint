@@ -90,6 +90,7 @@ def runner(session, settings, calls, **kw):
     kw.setdefault("battery", lambda: False)
     kw.setdefault("subscription_check", lambda s: None)
     kw.setdefault("researcher", fake_researcher(calls))
+    kw.setdefault("scout", lambda session, settings: [])
     kw.setdefault("reviewer", stub_reviewer(calls))
     ops = OperationsManager(session, settings, handlers=recording_handlers(settings, calls))
     return ShiftRunner(session, settings, ops=ops, **kw)
@@ -240,6 +241,7 @@ def test_red_team_rework_is_implemented_rebuilt_and_reviewed_again(session, sett
     fake_claude.replies = [revise]
     result = ShiftRunner(session, settings, ops=ops, now=Clock(IN_WINDOW), battery=lambda: False,
                          subscription_check=lambda s: None, reviewer=review,
+                         scout=lambda session, settings: [],
                          researcher=fake_researcher([], titles=())).run()  # no new ideas: this shift is the rework
 
     assert product.status == S.HUMAN_REVIEW, result.stop_reason
@@ -268,3 +270,23 @@ def test_jobs_interrupted_by_a_killed_shift_are_requeued(session, settings, make
     runner(session, settings, calls, researcher=fake_researcher(calls, titles=())).run()
     assert orphan.status == JobStatus.CANCELLED
     assert product.status == S.HUMAN_REVIEW  # the requeued QA job ran, and the product went on
+
+
+def test_the_shift_scouts_then_researches_the_best_candidate(session, settings):
+    from app.models import NicheCandidate
+
+    calls = []
+
+    def scout(session, settings):
+        calls.append(("scout",))
+        rows = [NicheCandidate(niche=n, score=s, status=NicheCandidate.NEW, factors_json="{}")
+                for n, s in (("craft fair vendor inventory", 78.0), ("wedding budgets", 64.0), ("weak", 20.0))]
+        session.add_all(rows)
+        session.flush()
+        return rows
+
+    runner(session, settings, calls, scout=scout, researcher=fake_researcher(calls, titles=())).run()
+    assert calls[:2] == [("scout",), ("research", "craft fair vendor inventory")]
+    calls.clear()  # next shift: candidates are waiting, so no new scout
+    runner(session, settings, calls, scout=scout, researcher=fake_researcher(calls, titles=())).run()
+    assert ("scout",) not in calls

@@ -126,7 +126,21 @@ def _right_now(session: Session, settings: Settings, now: datetime) -> list[str]
                                      or "none"),
               f"Claude headless runs today: {headless_runs_today(session, settings)} of "
               f"{settings.max_claude_runs_per_day}", ""]
+    lines += _niche_queue(session)
     return lines
+
+
+def _niche_queue(session: Session) -> list[str]:
+    """The scout's best niches still waiting for deep research (python -m app.cli niches lists all)."""
+    from agents.scout import CANDIDATE_MIN_SCORE
+    from app.models import NicheCandidate
+
+    rows = session.scalars(select(NicheCandidate).where(NicheCandidate.status == NicheCandidate.NEW,
+                                                        NicheCandidate.score >= CANDIDATE_MIN_SCORE)
+                           .order_by(NicheCandidate.score.desc()).limit(5)).all()
+    if not rows:
+        return []
+    return ["Next niches to research (best first):"] + [f"  {r.score:5.1f}  {r.niche}" for r in rows] + [""]
 
 
 def _between(column, shift: Shift):

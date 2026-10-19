@@ -34,7 +34,8 @@ from tools.brands import brand_hits
 from tools.spec import SPEC_DIR
 
 S = ProductStatus
-MIN_SOURCES = 3
+MIN_SOURCES = 3          # the RESEARCH gate's minimum for a stored record
+RESEARCH_MIN_SOURCES = 6  # a new niche research answer must cite at least this many
 ACTOR = "research"
 
 # What Production can build today. Finance scores automation suitability 1 for anything else.
@@ -101,13 +102,15 @@ PROMPT = """You are Hive-Mint's Research department. Research this niche for sma
 (spreadsheet workbooks with formulas and charts, sold with a PDF guide and README as a ZIP download):
 
 NICHE: {niche}
-
-Gather evidence with web search and by reading public pages only:
-- what is selling now (marketplace listings, bestseller lists, blog round-ups), with evidence of demand;
+{scout_notes}
+Research it in depth. Gather evidence with web search and by reading public pages only:
+- what is selling now: open at least 6 comparable listings or product pages across at least 2 marketplaces or
+  stores, and note their prices, visible review or sales counts and bestseller badges;
 - price ranges buyers pay for comparable files;
 - what those products commonly contain (sheets, sections, features);
-- buyer complaints from public reviews (what disappoints, what is missing, what is confusing);
-- gaps: needs that existing products do not meet well.
+- buyer complaints from public reviews and forum threads (what disappoints, what is missing, what is confusing);
+- gaps: needs that existing products do not meet well;
+- whether demand is steady or seasonal, and whether buyers are hobbyists or businesses (who pays more).
 
 Rules you must follow:
 - Use web search and public pages only. Do not log in, do not bypass paywalls, robots.txt or anti-bot
@@ -124,13 +127,13 @@ Rules you must follow:
 Answer with JSON matching the provided schema."""
 
 
-def research_problems(result: ResearchResult) -> list[str]:
+def research_problems(result: ResearchResult, min_sources: int = RESEARCH_MIN_SOURCES) -> list[str]:
     """Deterministic checks on a research answer. Empty means it may be stored."""
     problems = []
     urls = {s.url.strip().rstrip("/").lower() for s in result.sources
             if urlparse(s.url).scheme in ("http", "https") and urlparse(s.url).netloc}
-    if len(urls) < MIN_SOURCES:
-        problems.append(f"only {len(urls)} distinct http(s) source URLs; at least {MIN_SOURCES} are required")
+    if len(urls) < min_sources:
+        problems.append(f"only {len(urls)} distinct http(s) source URLs; at least {min_sources} are required")
     count = len(result.sources)
     for price in result.price_ranges:
         if price.source >= count:
@@ -168,7 +171,8 @@ def run_niche_research(session: Session, settings: Settings, niche: str, *,
                     + "\n") if problems else ""
             try:
                 completion = provider.run(job, Department.RESEARCH,
-                                          PROMPT.format(niche=niche, min_sources=MIN_SOURCES, problems=note),
+                                          PROMPT.format(niche=niche, min_sources=RESEARCH_MIN_SOURCES,
+                                                        scout_notes=scout_notes(session, niche), problems=note),
                                           headless_policy.RESEARCH, response_model=ResearchResult)
             except ProviderError as error:
                 last_error, problems = str(error), []
@@ -197,6 +201,24 @@ def run_niche_research(session: Session, settings: Settings, niche: str, *,
     raise ResearchFailed(job.error)
 
 
+def scout_notes(session: Session, niche: str) -> str:
+    """What the niche scout already found about this niche, as a head start for the deep research."""
+    from app.models import NicheCandidate
+
+    cand = session.scalar(select(NicheCandidate).where(NicheCandidate.niche == niche)
+                          .order_by(NicheCandidate.id.desc()).limit(1))
+    if cand is None:
+        return ""
+    data = json.loads(cand.data_json)
+    lines = [f"Scout notes (a quick survey; verify and go deeper): audience: {cand.audience}",
+             f"why it looked promising: {data.get('why_now', '')}",
+             f"example products: {', '.join(data.get('example_products', []))}",
+             f"prices seen: ${data.get('price_low', 0):.0f}-${data.get('price_high', 0):.0f}"]
+    if data.get("risks"):
+        lines.append(f"risks noted: {'; '.join(data['risks'])}")
+    return "\n".join(lines) + "\n"
+
+
 class ResearchFailed(RuntimeError):
     """Niche research ran out of attempts without a valid answer."""
 
@@ -214,6 +236,11 @@ def _store(session: Session, niche: str, job: Job, result: ResearchResult) -> Re
             description=opp.description,
             data_json=json.dumps(opp.model_dump(exclude={"title", "product_type", "description", "factors"})),
             factors_json=json.dumps(opp.factors.model_dump())))
+    from app.models import NicheCandidate
+
+    for cand in session.scalars(select(NicheCandidate).where(NicheCandidate.niche == niche,
+                                                             NicheCandidate.status == NicheCandidate.NEW)):
+        cand.status, cand.research_id = NicheCandidate.RESEARCHED, record.id
     log_event(session, "research.recorded", actor=ACTOR, job=job,
               message=f"{niche}: {len(result.opportunities)} opportunities, {len(result.sources)} sources, "
                       f"{result.confidence} confidence", data={"research_id": record.id})

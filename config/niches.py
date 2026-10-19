@@ -1,7 +1,8 @@
 """Seed niches for the Research department.
 
-Each shift researches the first niche with no research record from the last
-RESEARCH_REFRESH_DAYS days. Generic products only: no brand materials, logos, trademarks
+Each shift researches one niche in depth: first the niche scout's best NEW candidate
+(agents/scout.py; the scout surveys for new niches about once a week), and only when there is
+none, the first seed niche below with no research record from the last RESEARCH_REFRESH_DAYS days. Generic products only: no brand materials, logos, trademarks
 or vendor-specific templates.
 """
 

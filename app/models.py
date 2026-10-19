@@ -245,6 +245,29 @@ class Opportunity(Base):
     scored_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
+class NicheCandidate(Base):
+    """A niche the Research department's scout found worth a deep look, scored by code from cited evidence.
+
+    The shift researches the best-scoring NEW candidate in depth (python -m app.cli niches lists them).
+    """
+
+    __tablename__ = "niche_candidates"
+
+    NEW, RESEARCHED, SKIPPED = "NEW", "RESEARCHED", "SKIPPED"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), index=True)
+    niche: Mapped[str] = mapped_column(String(300), index=True)
+    audience: Mapped[str] = mapped_column(Text, default="")
+    data_json: Mapped[str] = mapped_column(Text, default="{}")  # example products, price range, risks
+    factors_json: Mapped[str] = mapped_column(Text, default="{}")  # factor -> {score, reason, sources}
+    sources_json: Mapped[str] = mapped_column(Text, default="[]")
+    score: Mapped[float] = mapped_column(default=0.0)
+    status: Mapped[str] = mapped_column(String(16), default="NEW", index=True)
+    research_id: Mapped[int | None] = mapped_column(ForeignKey("research_records.id"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+
+
 class SpecVersion(Base):
     """One version of a product's spec. Never updated; a revision adds a row with a diff."""
 

@@ -228,6 +228,48 @@ def cmd_research(args) -> int:
         return 0
 
 
+def cmd_scout(_args) -> int:
+    """Scout for new niches now (one headless Claude run, web search only)."""
+    from agents.scout import ScoutFailed, run_scout
+    from app.lifecycle import LimitReached
+    from providers.claude_headless import HeadlessRefused
+
+    settings = get_settings()
+    with _session() as session:
+        try:
+            rows = run_scout(session, settings)
+        except (ScoutFailed, LimitReached, HeadlessRefused) as error:
+            session.commit()
+            console.print(f"[red]{escape(str(error))}[/red]")
+            return 2
+        session.commit()
+        console.print(f"Scouted [bold]{len(rows)}[/bold] niche candidates. The next shift researches the best one.")
+    return cmd_niches(None)
+
+
+def cmd_niches(_args) -> int:
+    """List the scout's niche candidates, best first."""
+    from agents.scout import CANDIDATE_MIN_SCORE
+    from app.models import NicheCandidate
+
+    with _session() as session:
+        rows = session.scalars(select(NicheCandidate).order_by(NicheCandidate.score.desc(), NicheCandidate.id)).all()
+        if not rows:
+            console.print("No niche candidates yet. Run [bold]python -m app.cli scout[/bold], or wait for a shift.")
+            return 0
+        table = Table(title="Niche candidates (score 0-100; researched in depth from the top)")
+        for col in ("#", "Score", "Status", "Niche", "Prices", "Demand", "Build"):
+            table.add_column(col)
+        for row in rows:
+            data, factors = json.loads(row.data_json), json.loads(row.factors_json)
+            status = row.status if row.status != NicheCandidate.NEW or row.score >= CANDIDATE_MIN_SCORE else "weak"
+            table.add_row(str(row.id), f"{row.score:.0f}", status, escape(row.niche),
+                          f"${data.get('price_low', 0):.0f}-{data.get('price_high', 0):.0f}",
+                          str(factors["demand"]["score"]), str(factors["buildability"]["score"]))
+        console.print(table)
+    return 0
+
+
 def cmd_approve_rework(args) -> int:
     """The owner grants extra rework cycles; a product paused by the rework limit resumes into REWORK."""
     from app.lifecycle import approve_rework, rework_limit
@@ -552,6 +594,8 @@ def main(argv: list[str] | None = None) -> int:
     shift.add_argument("--ignore-window", action="store_true", help="run outside SHIFT_START-SHIFT_END (manual runs)")
     shift.set_defaults(func=cmd_shift)
     commands.add_parser("report", help="rewrite the daily report on the Desktop").set_defaults(func=cmd_report)
+    commands.add_parser("scout", help="scout for new niches now (one headless Claude run)").set_defaults(func=cmd_scout)
+    commands.add_parser("niches", help="list the scout's niche candidates").set_defaults(func=cmd_niches)
     research = commands.add_parser("research", help="research a niche with headless Claude Code (web search)")
     research.add_argument("--niche", required=True)
     research.set_defaults(func=cmd_research)

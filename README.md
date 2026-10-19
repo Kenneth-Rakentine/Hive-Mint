@@ -33,6 +33,8 @@ python -m app.cli review-import 1 research\reviews\1\verdict.json
 python -m app.cli rework 1 brief.json  # send a product back with a structured rework brief
 python -m app.cli resume 1             # return a PAUSED or ERROR product to its gate
 python -m app.cli research --niche "independent motel night audit"   # headless Claude + web search
+python -m app.cli scout       # survey 8-15 new niches now, scored from cited evidence
+python -m app.cli niches      # the scout's candidates, best first (each shift researches the top one)
 python -m app.cli shift                # one unattended shift (add --ignore-window outside 1-10 PM)
 python -m app.cli approve-rework 1     # grant product 1 one more rework cycle (resumes it if paused)
 python -m app.cli spec-check spec.json # validate, build and test a spec file; changes nothing

@@ -33,7 +33,7 @@ def research_answer(**overrides):
         "common_contents": ["daily log", "room status"], "complaints": ["no totals", "hard to edit"],
         "gaps": ["cash reconciliation"],
         "sources": [{"url": f"https://example.com/page{i}", "title": f"p{i}", "supports": "listing prices"}
-                    for i in range(3)],
+                    for i in range(6)],
         "confidence": "high", "opportunities": [opportunity()]}
     answer.update(overrides)
     return answer
@@ -42,7 +42,7 @@ def research_answer(**overrides):
 def test_valid_research_is_stored_with_sources_and_opportunities(settings, session, fake_claude):
     fake_claude.replies = [{"structured_output": research_answer()}]
     record = run_niche_research(session, settings, "small motels")
-    assert record.confidence == "high" and len(json.loads(record.sources_json)) == 3
+    assert record.confidence == "high" and len(json.loads(record.sources_json)) == 6
     assert json.loads(record.findings_json)["complaints"] == ["no totals", "hard to edit"]
     opp = session.scalar(select(Opportunity))
     assert opp.research_id == record.id and opp.decision == Opportunity.PENDING
@@ -61,7 +61,7 @@ def test_invalid_research_is_retried_with_the_problems_listed(settings, session,
                            {"structured_output": research_answer()}]
     record = run_niche_research(session, settings, "short-term rentals")
     assert session.get(Job, record.job_id).attempts == 3
-    assert "at least 3 are required" in fake_claude.calls[1][1]
+    assert "at least 6 are required" in fake_claude.calls[1][1]
     assert "Airbnb" in fake_claude.calls[2][1]
     assert len(session.scalars(select(Event).where(Event.event_type == "research.rejected")).all()) == 2
 
