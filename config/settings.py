@@ -115,6 +115,10 @@ class Settings:
     max_claude_runs_per_day: int = 15
     # Distinct products that may get their first build per day; rework rebuilds count toward max_builds_per_day.
     max_products_built_per_day: int = 2
+    # Niches a shift may research while none of its ideas has passed Finance yet. Another niche is only
+    # started while at least research_reserve_runs headless runs remain for building what it finds.
+    max_research_per_shift: int = 3
+    research_reserve_runs: int = 6
     shift_start: str = "13:00"  # local time in `timezone`
     shift_end: str = "22:00"
     skip_on_battery: bool = True
@@ -175,6 +179,8 @@ class Settings:
             soffice_path=os.getenv("HIVEMINT_SOFFICE") or None,
             max_claude_runs_per_day=_int("MAX_CLAUDE_RUNS_PER_DAY", 15),
             max_products_built_per_day=_int("MAX_PRODUCTS_BUILT_PER_DAY", 2),
+            max_research_per_shift=_int("MAX_RESEARCH_PER_SHIFT", 3),
+            research_reserve_runs=_int("RESEARCH_RESERVE_RUNS", 6),
             shift_start=os.getenv("SHIFT_START", "13:00"),
             shift_end=os.getenv("SHIFT_END", "22:00"),
             skip_on_battery=_bool("SKIP_ON_BATTERY", True),
@@ -197,6 +203,7 @@ class Settings:
             "max_rework_cycles": self.max_rework_cycles,
             "max_claude_runs_per_day": self.max_claude_runs_per_day,
             "max_products_built_per_day": self.max_products_built_per_day,
+            "max_research_per_shift": self.max_research_per_shift,
             "shift_window": f"{self.shift_start}-{self.shift_end}",
             "skip_on_battery": self.skip_on_battery,
             "min_free_disk_gb": self.min_free_disk_gb,

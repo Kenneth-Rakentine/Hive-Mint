@@ -68,6 +68,7 @@ class ShiftRunner:
     reviewer: Callable = red_team.run_headless
     subscription_check: Callable = check_subscription
     log: list[dict] = field(default_factory=list)
+    _created_last: int = 0
     errors: list[str] = field(default_factory=list)
 
     def __post_init__(self):
@@ -107,9 +108,18 @@ class ShiftRunner:
         return None
 
     def _steps(self) -> str | None:
-        for name in STEPS[:3]:
-            if stop := self._step(name):
-                return stop
+        # Research and Finance repeat until an idea passes Finance, the per-shift research limit is
+        # reached, or too few Claude runs would be left to build what research finds.
+        for round_ in range(max(1, self.settings.max_research_per_shift)):
+            if round_ and not self._worth_another_niche():
+                break
+            for name in ("research", "finance"):
+                if stop := self._step(name):
+                    return stop
+            if self._created_last or not self.log[-2]["ran"]:
+                break
+        if stop := self._step("spec"):
+            return stop
         for _ in range(MAX_ROUNDS):
             moved = 0
             for name in REPEATING:
@@ -169,8 +179,13 @@ class ShiftRunner:
         count = self.session.scalar(select(func.count(Opportunity.id)).where(Opportunity.research_id == record.id))
         return 1, note + f"'{niche}': {count} opportunities, {record.confidence} confidence (record #{record.id})"
 
+    def _worth_another_niche(self) -> bool:
+        left = self.settings.max_claude_runs_per_day - headless_runs_today(self.session, self.settings)
+        return left >= self.settings.research_reserve_runs
+
     def _do_finance(self) -> tuple[int, str]:
         created = select_opportunities(self.session, self.settings)
+        self._created_last = len(created)
         self.session.commit()
         moved = self._drain({S.IDEA, S.RESEARCH, S.FINANCE_REVIEW})
         names = ", ".join(p.name for p in created) or "none"

@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from agents import red_team
 from agents.departments import STUB_HANDLERS, StageResult
@@ -15,6 +15,7 @@ from agents.research import research_gate
 from app.lifecycle import LimitReached
 from app.models import Build, Opportunity, Product, ResearchRecord, Shift, SpecVersion
 from app.shift import STEPS, ShiftRunner, in_window
+from config.niches import SEED_NICHES
 from app.states import Department, Outcome, ProductStatus as S
 from providers.claude_headless import HeadlessRefused
 from tests.conftest import advance_to
@@ -290,3 +291,41 @@ def test_the_shift_scouts_then_researches_the_best_candidate(session, settings):
     calls.clear()  # next shift: candidates are waiting, so no new scout
     runner(session, settings, calls, scout=scout, researcher=fake_researcher(calls, titles=())).run()
     assert ("scout",) not in calls
+
+
+def weak_researcher(calls, strong_on=None):
+    """Every niche yields one idea; only the strong_on-th research yields one that passes Finance."""
+    def research(session, settings, niche):
+        calls.append(("research", niche))
+        n = sum(1 for c in calls if c[0] == "research" and isinstance(c[1], str))
+        record = ResearchRecord(niche=niche, summary="s", confidence="high",
+                                sources_json=json.dumps([{"url": f"https://e.com/{i}"} for i in range(3)]))
+        session.add(record)
+        session.flush()
+        factors = strong_factors() if n == strong_on else json.dumps(
+            {k: {"score": 2, "reason": "r", "sources": [0]} for k in json.loads(strong_factors())})
+        session.add(Opportunity(research_id=record.id, title=f"Idea {n}", product_type="spreadsheet",
+                                description="d", data_json=json.dumps({"price_low": 20, "price_high": 30}),
+                                factors_json=factors))
+        session.flush()
+        return record
+
+    return research
+
+
+def test_a_shift_researches_more_niches_until_an_idea_passes_finance(session, settings):
+    calls = []
+    runner(session, settings, calls, researcher=weak_researcher(calls, strong_on=2)).run()
+    assert [c for c in calls if c[0] == "research" and isinstance(c[1], str)] == [("research", n)
+                                                                                  for n in SEED_NICHES[:2]]
+    assert session.scalar(select(func.count(Product.id))) == 1
+
+
+def test_research_rounds_stop_at_the_limit_and_keep_claude_runs_for_building(session, settings):
+    calls = []
+    runner(session, replace(settings, max_research_per_shift=2), calls, researcher=weak_researcher(calls)).run()
+    assert sum(1 for c in calls if c[0] == "research" and isinstance(c[1], str)) == 2
+    calls = []
+    tight = replace(settings, max_claude_runs_per_day=5)  # fewer than research_reserve_runs left
+    runner(session, tight, calls, researcher=weak_researcher(calls)).run()
+    assert sum(1 for c in calls if c[0] == "research" and isinstance(c[1], str)) == 1
