@@ -67,8 +67,23 @@ def test_evaluate_records_deterministic_adjustments(settings, session, record):
     assert factors["margin"] == 1 and factors["automation_suitability"] == 1
     assert any("margin set to 1" in r for r in reasons)
     assert any("cannot build 'pdf'" in r for r in reasons)
-    record.confidence = "medium"
-    assert evaluate(opp, record, settings)[0] == value - 10
+    record.confidence = "medium"  # scored like high; only low confidence is held back (in select)
+    assert evaluate(opp, record, settings)[0] == value
+
+
+def test_recent_turned_down_ideas_can_be_scored_again(settings, session, record):
+    from agents.finance import reopen_recent
+
+    opp = _opportunity(session, record, "Crowded Tracker")
+    opp.decision, opp.score = Opportunity.BELOW_THRESHOLD, 50.0
+    low = ResearchRecord(niche="thin", summary="s", confidence="low", sources_json="[]")
+    session.add(low)
+    session.flush()
+    thin = _opportunity(session, low, "Thin Evidence Tracker")
+    thin.decision = Opportunity.BELOW_THRESHOLD
+    session.flush()
+    assert [o.id for o in reopen_recent(session)] == [opp.id]
+    assert (opp.decision, opp.score) == (Opportunity.PENDING, None) and thin.decision == Opportunity.BELOW_THRESHOLD
 
 
 def test_select_moves_only_the_top_opportunities_above_the_threshold(settings, session, record):

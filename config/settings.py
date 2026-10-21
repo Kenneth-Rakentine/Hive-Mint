@@ -23,7 +23,9 @@ DEFAULT_OLLAMA_MODELS_DIR = Path.home() / ".ollama" / "models"
 OPPORTUNITY_FACTORS = ("demand", "competition", "margin", "ease", "differentiation", "support_burden",
                        "automation_suitability")
 INVERTED_FACTORS = frozenset({"competition", "support_burden"})
-DEFAULT_OPPORTUNITY_WEIGHTS = (("demand", 0.25), ("competition", 0.15), ("margin", 0.15), ("ease", 0.10),
+# Owner decision 2026-10-21: demand counts most and competition little. Marketplace buyers pay for a
+# ready-made file even when free or similar ones exist, so a crowded market is not a reason to skip.
+DEFAULT_OPPORTUNITY_WEIGHTS = (("demand", 0.35), ("competition", 0.05), ("margin", 0.15), ("ease", 0.10),
                                ("differentiation", 0.15), ("support_burden", 0.10), ("automation_suitability", 0.10))
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 

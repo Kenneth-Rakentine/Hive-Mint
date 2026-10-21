@@ -5,7 +5,7 @@ score and "lower is better" factors (competition, support burden) are inverted f
 Research's estimates are adjusted by deterministic rules, each recorded as a reason:
 - margin is recomputed from the researched price range after marketplace fees;
 - automation suitability is 1 for product types Production cannot build yet;
-- medium confidence costs MEDIUM_CONFIDENCE_PENALTY points; low confidence is never selected.
+- low research confidence is never selected (medium is scored like high; owner decision 2026-10-21).
 
 Only the top MAX_OPPORTUNITIES_PER_SHIFT opportunities at or above OPPORTUNITY_THRESHOLD become
 products (IDEA), within MAX_IDEAS_PER_DAY. Every decision and its reasons are stored.
@@ -31,7 +31,6 @@ S = ProductStatus
 ACTOR = "finance"
 # Marketplace fee assumption for a digital download: ~6.5% transaction + ~3% + $0.25 processing + $0.20 listing.
 FEE_RATE, FEE_FIXED = 0.095, 0.45
-MEDIUM_CONFIDENCE_PENALTY = 10
 # Net revenue per sale (USD) -> margin score.
 MARGIN_STEPS = ((3, 1), (6, 2), (10, 3), (18, 4))
 
@@ -80,9 +79,6 @@ def evaluate(opp: Opportunity, record: ResearchRecord, settings: Settings) -> tu
         factors["automation_suitability"] = 1
     value, formula = score(factors, dict(settings.opportunity_weights))
     reasons += formula
-    if record.confidence == "medium":
-        value = round(value - MEDIUM_CONFIDENCE_PENALTY, 1)
-        reasons.append(f"-{MEDIUM_CONFIDENCE_PENALTY} for medium research confidence")
     return value, reasons, factors
 
 
@@ -151,3 +147,27 @@ def finance_gate(settings: Settings):
 
     handler.provider = "deterministic"
     return handler
+
+
+def reopen_recent(session: Session, days: int = 14) -> list[Opportunity]:
+    """The owner asks Finance to score recent turned-down ideas again (e.g. after the weights change).
+
+    Only ideas turned down for their score, from research that was not low confidence, go back to PENDING;
+    the next shift's Finance step scores them with the current settings. Every reopen is logged.
+    """
+    from datetime import timedelta
+
+    since = utcnow() - timedelta(days=days)
+    rows = session.scalars(select(Opportunity).join(ResearchRecord, ResearchRecord.id == Opportunity.research_id)
+                           .where(Opportunity.decision == Opportunity.BELOW_THRESHOLD,
+                                  Opportunity.product_id.is_(None),
+                                  ResearchRecord.confidence != "low",
+                                  Opportunity.created_at >= since)).all()
+    for opp in rows:
+        log_event(session, "finance.reopened", actor="owner",
+                  message=f"{opp.title}: was {opp.score}; Finance scores it again with the current settings",
+                  data={"opportunity_id": opp.id, "previous_score": opp.score})
+        opp.decision, opp.score, opp.rank = Opportunity.PENDING, None, None
+    session.flush()
+    return rows
+

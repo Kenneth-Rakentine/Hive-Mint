@@ -46,14 +46,16 @@ SCOUT_MIN_SOURCES = 10
 SCOUT_REFRESH_DAYS = 7       # scout again when the last scout is older than this
 CANDIDATE_MIN_SCORE = 55.0   # weaker candidates are kept for the record but never researched
 # Weights sum to 1. Competition is "lower is better" and is inverted before weighting.
-WEIGHTS = {"demand": 0.35, "competition": 0.15, "price": 0.15, "buildability": 0.25, "safety": 0.10}
+# Owner decision 2026-10-21: proven demand matters most; a crowded market is not a reason to skip.
+WEIGHTS = {"demand": 0.45, "competition": 0.05, "price": 0.15, "buildability": 0.25, "safety": 0.10}
 INVERTED = ("competition",)
 
 
 class CandidateFactors(BaseModel):
     demand: Factor = Field(description="5 = strong, repeated evidence of buyers (bestsellers, many reviews/sales); "
                                        "1 = no evidence anyone buys this")
-    competition: Factor = Field(description="5 = saturated with strong, well-reviewed listings; 1 = few or weak ones")
+    competition: Factor = Field(description="5 = saturated with strong, well-reviewed paid listings; 1 = few or weak "
+                                            "ones. Free templates elsewhere barely count")
     price: Factor = Field(description="5 = comparable files sell for $15+; 3 = about $8; 1 = under $3 or free")
     buildability: Factor = Field(description="5 = a formula-driven spreadsheet + PDF guide fully delivers it; "
                                              "3 = partly (needs design polish or printables); "

@@ -63,10 +63,14 @@ class Factor(BaseModel):
 
 class Factors(BaseModel):
     demand: Factor = Field(description="5 = many sales/reviews seen; 1 = little evidence of buyers")
-    competition: Factor = Field(description="5 = crowded with strong listings; 1 = few or weak competitors")
+    competition: Factor = Field(description="5 = crowded with strong, well-reviewed PAID listings on the same "
+                                            "marketplace; 1 = few or weak ones. Free templates elsewhere barely "
+                                            "count: marketplace buyers pay for a ready-made file instead of hunting "
+                                            "for a free one")
     margin: Factor = Field(description="5 = buyers pay $15+ for this kind of file; 1 = under $3")
     ease: Factor = Field(description="5 = a spreadsheet + PDF can deliver it fully; 1 = needs software or services")
-    differentiation: Factor = Field(description="5 = clear gap vs existing listings; 1 = nothing new to offer")
+    differentiation: Factor = Field(description="5 = clear gap vs existing listings; 3 = a solid, well-made "
+                                                "version of a proven seller; 1 = a weaker copy of what exists")
     support_burden: Factor = Field(description="5 = buyers will need lots of help; 1 = self-explanatory")
     automation_suitability: Factor = Field(description="5 = generic, rules-based, testable by formulas; "
                                                        "1 = needs custom work per buyer")

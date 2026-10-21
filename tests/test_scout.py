@@ -48,7 +48,7 @@ def test_score_formula_rewards_demand_and_buildability_and_inverts_competition()
     worst = candidate_score({"demand": 1, "competition": 5, "price": 1, "buildability": 1, "safety": 1})
     assert (best, worst) == (100.0, 0.0)
     crowded = candidate_score({"demand": 5, "competition": 5, "price": 5, "buildability": 5, "safety": 5})
-    assert crowded == 85.0
+    assert crowded == 95.0  # a crowded market costs little: buyers still pay
 
 
 def test_a_valid_scout_stores_scored_candidates(settings, session, fake_claude):

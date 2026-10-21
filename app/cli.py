@@ -270,6 +270,20 @@ def cmd_niches(_args) -> int:
     return 0
 
 
+def cmd_rescore(args) -> int:
+    """Send recent turned-down ideas back to Finance to be scored with the current settings."""
+    from agents.finance import reopen_recent
+
+    with _session() as session:
+        rows = reopen_recent(session, days=args.days)
+        session.commit()
+        for opp in rows:
+            console.print(escape(f"  #{opp.id} {opp.title}"))
+        console.print(f"{len(rows)} idea(s) go back to Finance; the next shift scores them "
+                      "(or run [bold]python -m app.cli shift[/bold] now).")
+    return 0
+
+
 def cmd_approve_rework(args) -> int:
     """The owner grants extra rework cycles; a product paused by the rework limit resumes into REWORK."""
     from app.lifecycle import approve_rework, rework_limit
@@ -596,6 +610,9 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("report", help="rewrite the daily report on the Desktop").set_defaults(func=cmd_report)
     commands.add_parser("scout", help="scout for new niches now (one headless Claude run)").set_defaults(func=cmd_scout)
     commands.add_parser("niches", help="list the scout's niche candidates").set_defaults(func=cmd_niches)
+    rescore = commands.add_parser("rescore", help="send recent turned-down ideas back to Finance")
+    rescore.add_argument("--days", type=int, default=14)
+    rescore.set_defaults(func=cmd_rescore)
     research = commands.add_parser("research", help="research a niche with headless Claude Code (web search)")
     research.add_argument("--niche", required=True)
     research.set_defaults(func=cmd_research)
