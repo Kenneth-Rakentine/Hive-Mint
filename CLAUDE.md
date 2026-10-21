@@ -83,7 +83,7 @@ Whenever you install, download, create, cache or change anything outside the rep
 ## Architecture
 
 - Storefronts (Etsy, Gumroad, etc.) are **output adapters**, not the core. The core is products, gates and the database.
-- The pixel GUI comes **last** and only visualizes database state. It never drives logic or shows simulated activity. Owner-approved ambience: an idle resident keeper at every building, the sea and the stars; a keeper is shown *working*, and the building's windows glow orange, only while a job there is RUNNING; a keeper carries a crate along the road only when a product's status really changed.
+- The pixel GUI comes **last** and only visualizes database state. It never drives logic or shows simulated activity. Owner-approved ambience: an idle resident keeper at every building, the sea, the stars, trees and rocks, and three bats that fly past now and then; a keeper is shown *working*, and the building's windows glow orange, only while a job there is RUNNING; a keeper carries a crate along the road only when a product's status really changed.
 
 ## Working in this repo
 

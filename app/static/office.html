@@ -225,6 +225,7 @@
   const HORIZON = 19;
   const MOON = { x: 34, y: 9, r: 7 };
   const STARS = [];  // [x, y, phase offset]
+  const ROAD_CELLS = new Set();  // "x,y" of every road pixel, so scenery stays off the road
   (function paintGround() {
     const g = ground.getContext("2d"), r = rng(7);
     const px = (c, x, y, w = 1, h = 1) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
@@ -259,6 +260,7 @@
         for (let dy = -half; dy <= half; dy++) for (let dx = -half; dx <= half; dx++) {
           const X = Math.round(x + dx), Y = Math.round(y + dy);
           if (Math.abs(dx) === half && r() < .5) continue;
+          ROAD_CELLS.add(X + "," + Y);
           px(dith(X, Y, .5) ? G[8] : G[7], X, Y);
           if (r() < .06) px(G[5], X, Y);
         }
@@ -285,6 +287,57 @@
       (r() < .65 ? deadTree : stone)(x, y);
     }
     for (let i = 0; i < 70; i++) { const x = (r() * W) | 0, y = (r() * H) | 0; if (x > coast(y) + 3) px(r() < .5 ? G[6] : G[8], x, y, 2, 1); }
+
+    // Old gnarled trees and boulders, larger toward the viewer, kept off the road, buildings and signs.
+    const offRoad = (x, y, d) => { for (let dy = -d; dy <= d; dy += 2) for (let dx = -d; dx <= d; dx += 2)
+      if (ROAD_CELLS.has((x + dx) + "," + (y + dy))) return false; return true; };
+    const roomy = (x, y, d) => clear(x, y) && offRoad(x, y, d) && y > HORIZON + 6 &&
+      Object.values(LAYOUT).every(L => !(Math.abs(L.x - x) < 26 && y > L.y - 50 && y < L.y + 14));
+    const oldTree = (x, y) => {
+      const scale = .6 + y / H, h = Math.round(10 + 9 * scale), lean = r() < .5 ? -1 : 1;
+      for (let j = 0; j < 4; j++) if (dith(x + j, y + 1, .5)) px(G[1], x - 2 + j * 2, y + 1, 2, 1);   // roots
+      let cx = x;
+      for (let j = 0; j < h; j++) {                                  // a crooked trunk, two pixels wide
+        if (j > 3 && r() < .18) cx += lean;
+        px(G[1], cx, y - j, 2, 1); if (j % 3 === 0) px(G[4], cx, y - j);
+      }
+      for (let k = 0; k < 5 + (scale > 1 ? 2 : 0); k++) {           // bare branches reaching out and up
+        let bx = cx + (k % 2 ? 1 : 0), by = y - Math.round(h * (.45 + r() * .5)), dir = k % 2 ? 1 : -1;
+        const len = 3 + ((r() * 5 * scale) | 0);
+        for (let s2 = 0; s2 < len; s2++) {
+          bx += dir; if (r() < .6) by -= 1;
+          px(G[1], bx, by);
+          if (s2 === len - 2 && r() < .6) px(G[1], bx + dir, by - 2, 1, 2);   // a twig
+        }
+      }
+      px(G[1], cx - 1, y - h - 1, 4, 1); px(G[1], cx, y - h - 2, 2, 1);
+    };
+    const boulder = (x, y, size) => {
+      const w = size * 2 + 1, h = size + 1;
+      for (let j = 0; j < 3; j++) for (let i = 0; i < w + 3; i++)
+        if (dith(x + i, y + j, .45 - j * .12)) px(G[1], x + i, y + j);                    // shadow on the moor
+      for (let j = 0; j < h; j++) {
+        const inset = Math.max(0, size - 1 - Math.round(Math.sqrt(Math.max(0, (h * h) - (h - j) * (h - j))) * size / h));
+        for (let i = inset; i < w - inset; i++) {
+          const lit = (i - inset) < (w - 2 * inset) / 2 && j < h / 2;
+          const tone = lit ? (dith(x + i, y - h + j, .5) ? 11 : 10) : (dith(x + i, y - h + j, .45) ? 7 : 5);
+          px(G[tone], x + i, y - h + j);
+        }
+      }
+      px(G[11], x + Math.floor(w / 3), y - h, 2, 1);                                      // moonlit top
+      px(G[2], x + 1, y - 1, w - 2, 1);
+    };
+    for (let i = 0, made = 0; i < 400 && made < 16; i++) {
+      const x = 8 + ((r() * (W - 16)) | 0), y = 40 + ((r() * (H - 42)) | 0);
+      if (roomy(x, y, 5)) { oldTree(x, y); made++; }
+    }
+    for (let i = 0, made = 0; i < 400 && made < 14; i++) {
+      const x = 6 + ((r() * (W - 12)) | 0), y = 34 + ((r() * (H - 36)) | 0);
+      if (!roomy(x, y, 6)) continue;
+      const size = 3 + ((r() * (1 + y / H * 4)) | 0);
+      boulder(x, y, size); made++;
+      if (r() < .45 && roomy(x + size * 2 + 2, y + 1, 4)) boulder(x + size * 2 + 2, y + 1, Math.max(1, size - 1));
+    }
     // Rocks in the surf: placed once, the waves break on them every frame.
     for (let y = HORIZON + 4; y < H - 4; y += 9 + ((r() * 8) | 0)) ROCKS.push([coast(y) - 5 - ((r() * 10) | 0), y, 2 + ((r() * 3) | 0)]);
   })();
@@ -687,7 +740,36 @@
     }
   }
 
-  function loop(now) { draw(now); requestAnimationFrame(loop); }
+  // Bats: three of them flit across the sky every half minute or so. Scenery only, like the sea.
+  let bats = null, nextBats = performance.now() + 6000;
+  function batFlight(now) {
+    if (!motionOn) return;
+    if (!bats && now >= nextBats) {
+      const fromRight = Math.random() < .5, y = 22 + Math.random() * 40;   // over the moor, where they show
+      bats = { start: now, dur: 6500 + Math.random() * 3000, fromRight, y,
+               crew: [0, 1, 2].map(i => ({ dx: i * 9 + Math.random() * 6, dy: (i - 1) * 6 + Math.random() * 4,
+                                          phase: Math.random() * 6, wobble: 2 + Math.random() * 3 })) };
+    }
+    if (!bats) return;
+    const t = (now - bats.start) / bats.dur;
+    if (t > 1) { bats = null; nextBats = now + 22000 + Math.random() * 22000; return; }
+    for (const b of bats.crew) {
+      const run = (W + 60) * t - b.dx, x = bats.fromRight ? W + 20 - run : run - 20;
+      const y = bats.y + b.dy + Math.sin(now / 260 + b.phase) * b.wobble;
+      bat(Math.round(x), Math.round(y), Math.floor(now / 110 + b.phase) % 2);
+    }
+  }
+  function bat(x, y, up) {
+    const p = (X, Y, w = 1, h = 1) => ctx.fillRect(x + X, y + Y, w, h);
+    ctx.fillStyle = G[0];
+    p(0, 0, 2, 3); p(0, -1); p(1, -1);                              // body and ears
+    if (up) { p(-2, -1, 2, 1); p(-4, -2, 2, 1); p(-5, -3); p(2, -1, 2, 1); p(4, -2, 2, 1); p(6, -3);
+              p(-3, -1); p(4, -1); }                                // wings raised, scalloped
+    else { p(-2, 1, 2, 1); p(-4, 1, 2, 1); p(-5, 2); p(2, 1, 2, 1); p(4, 1, 2, 1); p(6, 2);
+           p(-3, 2); p(4, 2); }                                     // wings down
+  }
+
+  function loop(now) { draw(now); batFlight(now); requestAnimationFrame(loop); }
   setInterval(() => { if (motionOn) frame++; }, 380);
 
   // ---------------------------------------------------------------- DOM: labels, HUD, panel, log
