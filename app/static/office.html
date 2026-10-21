@@ -105,8 +105,8 @@
 
   .log { grid-area: log; overflow: auto; font-size: 14px; }
   .log ol { list-style: none; margin: 0; padding: 0; }
-  .log li { display: grid; grid-template-columns: 74px 120px 1fr; gap: 10px; padding: 2px 0; border-bottom: 1px dotted #4a4a4a; }
-  .log time { color: #7d7d7d; }
+  .log li { display: grid; grid-template-columns: 158px 120px 1fr; gap: 10px; padding: 2px 0; border-bottom: 1px dotted #4a4a4a; }
+  .log time { color: #7d7d7d; white-space: nowrap; }
   .log .who { color: var(--white); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .log .what { color: var(--bone); }
   .log .bad { color: var(--pitch); background: var(--white); padding: 0 4px; }
@@ -119,7 +119,7 @@
     .bld { font-size: 11px; padding: 2px 5px 3px; }
     .panel, .log { max-height: 340px; }
     .shift { margin-left: 0; }
-    .log li { grid-template-columns: 70px 1fr; }
+    .log li { grid-template-columns: 158px 1fr; }
     .log .what { grid-column: 1 / -1; }
   }
 </style>
@@ -790,9 +790,13 @@
     }
   }
 
+  const asDate = iso => new Date(iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z");
   function fmtTime(iso) {
-    const d = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z");
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return asDate(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  function fmtStamp(iso) {                 // "Wed Oct 21, 1:04 PM" in this computer's time zone
+    const d = asDate(iso);
+    return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }) + ", " + fmtTime(iso);
   }
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -811,7 +815,7 @@
     box.classList.toggle("on", !!(sh && sh.running));
     txt.textContent = !sh ? "No shift has run yet. The first starts at 1 PM."
       : sh.running ? `Shift running since ${fmtTime(sh.started_at)}`
-      : `Off shift. Last shift ended ${fmtTime(sh.ended_at)}${sh.stop_reason ? ": " + sh.stop_reason : ""}`;
+      : `Off shift. Last shift ended ${fmtStamp(sh.ended_at)}${sh.stop_reason ? ": " + sh.stop_reason : ""}`;
 
     for (const b of state.buildings) {
       const btn = labels[b.id], count = b.products.length;
@@ -824,7 +828,7 @@
     log.innerHTML = state.events.map(e => {
       const bad = /failed|error|refused|rejected/i.test(e.type + " " + (e.to || ""));
       const what = (e.product ? `${e.product}: ` : "") + e.message;
-      return `<li><time>${fmtTime(e.at)}</time><span class="who">${esc(e.actor)}</span><span class="what"><span class="${bad ? "bad" : ""}">${esc(what)}</span></span></li>`;
+      return `<li><time datetime="${esc(e.at)}">${fmtStamp(e.at)}</time><span class="who">${esc(e.actor)}</span><span class="what"><span class="${bad ? "bad" : ""}">${esc(what)}</span></span></li>`;
     }).join("") || `<li><span></span><span></span><span class="what">Nothing has happened yet. Activity appears here as the hive works.</span></li>`;
 
     if (selected) showPanel(selected);
