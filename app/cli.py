@@ -109,9 +109,18 @@ def _product(session, product_id: int) -> Product | None:
     return product
 
 
+BUSY = ("Another shift (or `run`) is already working. Only one may run at a time; watch it in the office, "
+        "or wait for it to finish.")
+
+
 def cmd_run(_args) -> int:
+    from tools.single_instance import lock_path, single_instance
+
     settings = get_settings()
-    with _session() as session:
+    with single_instance(lock_path(settings.db_url)) as mine, _session() as session:
+        if not mine:
+            console.print(f"[yellow]{BUSY}[/yellow]")
+            return 1
         ran = _run_until_idle(session, settings)
         console.print(f"Ran {ran} job(s).")
         for product in session.scalars(select(Product).order_by(Product.id)):
@@ -350,8 +359,13 @@ def cmd_shift(args) -> int:
     from app.report import write_report
     from app.shift import ShiftRunner
 
+    from tools.single_instance import lock_path, single_instance
+
     settings = get_settings()
-    with _session() as session:
+    with single_instance(lock_path(settings.db_url)) as mine, _session() as session:
+        if not mine:
+            console.print(f"[yellow]{BUSY}[/yellow]")
+            return 1
         shift = ShiftRunner(session, settings, ignore_window=args.ignore_window).run()
         console.print(f"Shift #{shift.id}: {escape(shift.stop_reason)}")
         for step in json.loads(shift.steps_json):

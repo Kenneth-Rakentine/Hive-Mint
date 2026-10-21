@@ -194,7 +194,9 @@ class OperationsManager:
                            model="none", tier=0,
                            cost_usd_micros=0, status=JobStatus.RUNNING)
             self.session.add(run)
-            self.session.flush()
+            # Commit before the (possibly long) handler: the office sees the job RUNNING, and the database
+            # isn't held locked for the minutes a headless Claude run can take.
+            self.session.commit()
             clock = time.perf_counter()
             try:
                 if handler is None:
