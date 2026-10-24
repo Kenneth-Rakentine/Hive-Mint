@@ -160,7 +160,9 @@ def test_seo_writes_a_complete_listing_package(session, settings, sample_product
     assert listing["image_files"] == ["01-cover.jpg", "02-included.jpg"]
     assert image_problems(sorted((out / "images").glob("*.jpg"))) == []
     assert (out / "upload" / sample_spec["zip_name"]).is_file()
-    assert "TAGS (13" in (out / "LISTING.txt").read_text(encoding="utf-8")
+    text = (out / "LISTING.txt").read_text(encoding="utf-8")
+    assert "TAGS (13" in text and "QUANTITY: 999" in text and f"SKU: HM-{sample_product.id:03d}-V" in text
+    assert listing["sku"] in (out / "UPLOAD_STEPS.txt").read_text(encoding="utf-8")
     assert "UPLOAD" in (out / "UPLOAD_STEPS.txt").read_text(encoding="utf-8").upper()
     row = session.scalar(select(Listing))
     assert (row.build_id, row.price_cents) == (build.id, 1200)

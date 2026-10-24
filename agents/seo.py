@@ -192,6 +192,7 @@ class SEO:
         price_range = self._price_range(session, product)
         draft = self._draft(session, job, product, spec, build_dir, slots, price_range)
         listing = self._finish(draft, spec, price_range)
+        listing["sku"] = sku(product, build.version)
 
         out = build_dir / LISTING_DIR
         if out.exists():
@@ -358,12 +359,20 @@ def draft_problems(draft: ListingDraft, spec: dict, slots: list[str], price_rang
     return problems
 
 
+def sku(product: Product, version: int) -> str:
+    """Stock-keeping code for the listing form, e.g. HM-005-V3: shop prefix, product number, build version.
+    Etsy shows it only to the seller; it ties a listing (and its sales) back to the product here."""
+    return f"HM-{product.id:03d}-V{version}"
+
+
 def listing_txt(listing: dict) -> str:
     faq = "\n\n".join(f"Q: {q['question']}\nA: {q['answer']}" for q in listing["faq"])
     return "\n".join([
         "LISTING — copy each part into the marketplace form", "=" * 60, "",
         f"TITLE ({len(listing['title'])}/{TITLE_MAX} characters):", listing["title"], "",
         f"PRICE: ${listing['price']:.2f}   ({listing['price_reason']})", "",
+        "QUANTITY: 999   (digital files never run out)",
+        f"SKU: {listing.get('sku', '')}   (only you see it; it links the listing to Hive-Mint's product number)", "",
         f"CATEGORY (suggested): {listing['category']}", "",
         f"TAGS ({len(listing['tags'])}; paste one at a time):", ", ".join(listing["tags"]), "",
         "DESCRIPTION:", "-" * 60, listing["description"], "-" * 60, "",
@@ -390,7 +399,12 @@ have checked your employer's outside-business policy.
    - Category: {listing['category']} (or the closest match the form offers).
    - Type: Digital.
 4. Digital files: upload {', '.join(listing['upload_files'])} from: {out / 'upload'}
-5. Price: ${listing['price']:.2f}. Quantity: 999 (digital items do not run out).
+5. Price & inventory:
+   - Price: ${listing['price']:.2f}
+   - Quantity: 999 (digital items do not run out)
+   - SKU: {listing.get('sku', '')} (only you see it; it ties this listing to the product in Hive-Mint)
+   - Renewal: Automatic
+   - Returns & exchanges: none needed (digital downloads use Etsy's fixed "Instant downloads" policy)
 6. Check the preview, then Publish.
 7. Back in Hive-Mint, nothing else is needed yet: sales tracking arrives in a later version.
 
