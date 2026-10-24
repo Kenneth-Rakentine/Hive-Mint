@@ -96,7 +96,9 @@ def approve(session: Session, settings: Settings, product: Product, *, approver:
 
 
 def reject(session: Session, settings: Settings, product: Product, *, actor: str, reason: str) -> Product:
-    _require_review(product)
+    """Turn a product down for good: one waiting for review, or one held (PAUSED or ERROR)."""
+    if product.status not in (S.PAUSED, S.ERROR):
+        _require_review(product)
     if not reason.strip():
         raise ValueError("Say why the product is rejected")
     return transition(session, settings, product, S.REJECTED, actor=actor, reason=f"Rejected by {actor}: {reason}")

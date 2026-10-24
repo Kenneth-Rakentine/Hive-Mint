@@ -67,7 +67,8 @@ def test_demo_stops_for_red_team_then_a_pass_verdict_reaches_human_review(cli_en
     assert cli.main(["review-import", str(product.id), str(verdict)]) == 0
     assert _product(engine).status == ProductStatus.COMPLIANCE
 
-    fake_claude.replies = [{"structured_output": good_draft(sample_spec)}]  # the SEO listing draft
+    from tests.test_seo import clean_review
+    fake_claude.replies = [{"structured_output": good_draft(sample_spec)}, clean_review]  # SEO draft, picture review
     assert cli.main(["run"]) == 0
     assert _product(engine).status == ProductStatus.HUMAN_REVIEW
     assert cli.main(["status"]) == 0

@@ -41,6 +41,12 @@ def good_draft(spec, **changes) -> dict:
     return draft | changes
 
 
+def clean_review(cmd, prompt):
+    """A picture review that inspected every picture listed in its prompt and found nothing."""
+    import re
+    return {"structured_output": {"checked": re.findall(r"^- (\S+\.jpg):", prompt, re.M), "defects": []}}
+
+
 def as_listing(draft: dict) -> dict:
     return draft | {"description": draft["description"] + "\n\n" + AI_DISCLOSURE}
 
@@ -145,7 +151,7 @@ def _seo_ready(session, settings, sample_product, sample_spec, build_copy):
 
 def test_seo_writes_a_complete_listing_package(session, settings, sample_product, sample_spec, build_copy, fake_claude):
     build, job = _seo_ready(session, settings, sample_product, sample_spec, build_copy)
-    fake_claude.replies = [{"structured_output": good_draft(sample_spec)}]
+    fake_claude.replies = [{"structured_output": good_draft(sample_spec)}, clean_review]
     result = SEO(settings)(sample_product, job)
     assert result.next_status == S.HUMAN_REVIEW, result.summary
     out = Path(build.path) / "listing"
@@ -166,7 +172,7 @@ def test_a_rejected_draft_is_retried_with_the_problems(session, settings, sample
                                                        fake_claude):
     _, job = _seo_ready(session, settings, sample_product, sample_spec, build_copy)
     fake_claude.replies = [{"structured_output": good_draft(sample_spec, title="x" * 200)},
-                           {"structured_output": good_draft(sample_spec)}]
+                           {"structured_output": good_draft(sample_spec)}, clean_review]
     assert SEO(settings)(sample_product, job).next_status == S.HUMAN_REVIEW
     assert "title is 200 characters" in fake_claude.calls[1][1]
     assert session.scalar(select(Event).where(Event.event_type == "listing.rejected")) is not None
@@ -185,7 +191,7 @@ def test_two_bad_drafts_raise_so_operations_retries_or_errors(session, settings,
 def _in_review(session, settings, sample_product, sample_spec, build_copy, fake_claude, with_listing=True):
     _, job = _seo_ready(session, settings, sample_product, sample_spec, build_copy)
     if with_listing:
-        fake_claude.replies = [{"structured_output": good_draft(sample_spec)}]
+        fake_claude.replies = [{"structured_output": good_draft(sample_spec)}, clean_review]
         SEO(settings)(sample_product, job)
     from app.lifecycle import transition
     transition(session, settings, sample_product, S.HUMAN_REVIEW, actor="seo", reason="listing ready")
@@ -242,3 +248,43 @@ def test_cover_text_always_fits_inside_the_picture():
     very_long = "A headline far too long to ever fit on two lines of a listing cover picture at full size"
     (head, head_lines), _ = cover_text(draw, very_long, [])
     assert all(draw.textlength(line, font=head) <= COVER_TEXT_WIDTH for line in head_lines)
+
+
+def test_visible_picture_defects_send_the_product_to_rework(session, settings, sample_product, sample_spec,
+                                                           build_copy, fake_claude):
+    from app.models import ReworkBrief
+
+    _, job = _seo_ready(session, settings, sample_product, sample_spec, build_copy)
+
+    def flawed(cmd, prompt):
+        names = clean_review(cmd, prompt)["structured_output"]["checked"]
+        return {"structured_output": {"checked": names, "defects": [
+            {"image": names[0], "where": "Start Here, Couple Names", "problem": "Name cut off: 'Jordan & Sam (exampl'",
+             "fix": "Widen column B on Start Here so the couple's names fit"}]}}
+
+    fake_claude.replies = [{"structured_output": good_draft(sample_spec)}, flawed]
+    result = SEO(settings)(sample_product, job)
+    assert result.next_status == S.REWORK and "cut off" in result.summary
+    brief = session.scalar(select(ReworkBrief))
+    assert brief.source == "SEO" and "Widen column B" in json.loads(brief.required_changes_json)[0]["change"]
+    prompt = fake_claude.calls[-1][1]
+    assert "cut off" in prompt and "01-cover.jpg" in prompt
+    assert fake_claude.calls[-1][0][fake_claude.calls[-1][0].index("--tools") + 1] == "Read,Glob,Grep"
+
+
+def test_a_review_that_skips_pictures_is_not_accepted(session, settings, sample_product, sample_spec, build_copy,
+                                                      fake_claude):
+    _, job = _seo_ready(session, settings, sample_product, sample_spec, build_copy)
+    lazy = {"structured_output": {"checked": ["01-cover.jpg"], "defects": []}}
+    fake_claude.replies = [{"structured_output": good_draft(sample_spec)}, lazy, lazy]
+    with pytest.raises(ListingRejected, match="skipped"):
+        SEO(settings)(sample_product, job)
+
+
+def test_a_held_product_can_be_rejected(session, settings, make_product):
+    from app.lifecycle import transition
+    product = make_product()
+    advance_to(session, settings, product, S.QA)
+    transition(session, settings, product, S.PAUSED, actor="test", reason="rework limit reached")
+    reject(session, settings, product, actor="Kenny", reason="QA failed four times")
+    assert product.status == S.REJECTED

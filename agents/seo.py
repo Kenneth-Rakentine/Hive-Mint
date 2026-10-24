@@ -119,6 +119,41 @@ RULES (code checks every one; a draft that breaks one is rejected):
 Answer with JSON matching the provided schema."""
 
 
+class PictureDefect(BaseModel):
+    image: str = Field(description="File name of the picture, e.g. 03-start-here.jpg")
+    where: str = Field(description="Where in the picture: the sheet, cell, label or area")
+    problem: str = Field(min_length=5, description="What a buyer would see that looks wrong")
+    fix: str = Field(min_length=5, description="What to change in the product or listing so it no longer happens")
+
+
+class PictureReview(BaseModel):
+    checked: list[str] = Field(description="File names of every picture you opened and inspected")
+    defects: list[PictureDefect] = Field(default_factory=list)
+
+
+PICTURE_PROMPT = """You are Hive-Mint's last visual check before the owner sees a listing. Open every listing picture
+below with the Read tool and inspect it closely, the way a picky buyer zooming in on Etsy would. These pictures show
+the real product's sheets, so a defect in a picture is usually a defect in the product.
+
+Report every one of these you can see (and anything else that looks broken or careless):
+- text cut off or clipped: a name, label, header, sentence or number that stops mid-word or runs past its box or
+  past the edge of the sheet or picture (e.g. "Jordan & Sam (exampl", "Mileage Deduct", "builds o");
+- text spilling outside its cell, box or button, overlapping other text or lines;
+- error values or filler: ####, #REF!, #DIV/0!, #N/A, #VALUE!, NaN, "lorem ipsum", "TBD", "XXX";
+- a row, label or key with a missing value or swatch next to it, empty columns or sections that should be filled
+  in a filled-in example, charts with no bars or lines;
+- misaligned or uneven boxes, labels not lined up with their values;
+- headline or bullet text on the picture that is cut off, overlaps the sheet, or is too small to read;
+- anything on the picture that contradicts the listing title or makes the product look unfinished.
+
+Do not report matters of taste. Report only what you can actually see. If a picture is clean, report nothing for it.
+
+PICTURES:
+{pictures}
+
+Answer with JSON matching the provided schema; "checked" must list every picture file name above."""
+
+
 class ListingRejected(RuntimeError):
     """The listing draft still broke the rules after the allowed tries."""
 
@@ -166,6 +201,22 @@ class SEO:
         images = self.image_maker(spec, build_dir, copy, out / "images")
         if bad := image_problems(images):
             raise ListingRejected("Listing images failed checks: " + "; ".join(bad))
+        review = self._picture_review(session, job, product, images)
+        if review.defects:
+            brief = create_brief(
+                session, product, source="SEO", actor=ACTOR,
+                summary=f"The listing pictures show {len(review.defects)} visible defect(s)",
+                required_changes=[{"id": f"picture_fix_v{build.version}_{i}", "change": d.fix,
+                                   "reason": f"{d.image} ({d.where}): {d.problem}",
+                                   "acceptance": "The listing picture review finds nothing on the rebuilt pictures"}
+                                  for i, d in enumerate(review.defects, start=1)],
+                findings=[d.model_dump() for d in review.defects], job=job, build=build)
+            log_event(session, "listing.pictures_rejected", actor=ACTOR, product=product, job=job,
+                      message="; ".join(f"{d.image}: {d.problem}" for d in review.defects)[:900])
+            return StageResult(Outcome.FAIL, S.REWORK,
+                               f"Picture review found {len(review.defects)} defect(s) in v{build.version}: "
+                               + "; ".join(f"{d.image}: {d.problem}" for d in review.defects)[:400],
+                               {"rework_brief_id": brief.id})
         upload_dir = out / "upload"
         upload_dir.mkdir()
         shutil.copy2(zip_path, upload_dir / zip_path.name)
@@ -187,6 +238,28 @@ class SEO:
                            f"images): {out}", {"listing_path": str(out)})
 
     # ------------------------------------------------------------------ helpers
+
+    def _picture_review(self, session: Session, job: Job, product: Product, images: list[Path]) -> PictureReview:
+        """One headless run that looks at every listing picture (Claude reads images) for visible defects."""
+        provider = self.provider_factory(session)
+        names = [p.name for p in images]
+        pictures = "\n".join(f"- {p.name}: {p}" for p in images)
+        last = ""
+        for _ in range(DRAFT_TRIES):
+            try:
+                completion = provider.run(job, Department.SEO, PICTURE_PROMPT.format(pictures=pictures),
+                                          headless_policy.SEO, response_model=PictureReview)
+            except ProviderError as error:
+                last = str(error)
+                continue
+            review: PictureReview = completion.data
+            missing = [n for n in names if n not in review.checked]
+            if not missing:
+                log_event(session, "listing.pictures_reviewed", actor=ACTOR, product=product, job=job,
+                          message=f"{len(names)} picture(s) inspected, {len(review.defects)} defect(s)")
+                return review
+            last = f"the review skipped {', '.join(missing)}"
+        raise ListingRejected(f"Picture review incomplete: {last}")
 
     def _price_range(self, session: Session, product: Product) -> tuple[float, float] | None:
         opp = opportunity_for(session, product)
