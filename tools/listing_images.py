@@ -160,21 +160,55 @@ def _text_block(draw, x: int, y: int, width: int, headline: str, bullets: list[s
         y += 26
 
 
+COVER_TEXT_WIDTH = WIDTH - 2 * SAFE_X
+
+
+def cover_text(draw, headline: str, bullets: list[str]):
+    """Fit the cover's headline (at most 2 lines) and bullet line inside the safe area, never past it.
+
+    The headline shrinks until it fits on two lines. The bullets ("a · b · c") shrink to a minimum size,
+    then drop the last bullet, then wrap onto two lines. Returns ((font, lines), (font, lines) or None).
+    """
+    head = None
+    for size in range(132, 79, -8):
+        f = font(size, bold=True)
+        lines = _wrap(draw, headline, f, COVER_TEXT_WIDTH)
+        head = (f, lines)
+        if len(lines) <= 2 and all(draw.textlength(line, font=f) <= COVER_TEXT_WIDTH for line in lines):
+            break
+    if not bullets:
+        return head, None
+    shown = list(bullets[:3])
+    while shown:
+        joined = "  ·  ".join(shown)
+        for size in range(58, 43, -4):
+            f = font(size)
+            if draw.textlength(joined, font=f) <= COVER_TEXT_WIDTH:
+                return head, (f, [joined])
+        if len(shown) == 1:
+            break
+        shown.pop()
+    f = font(48)
+    return head, (f, _wrap(draw, shown[0] if shown else bullets[0], f, COVER_TEXT_WIDTH)[:2])
+
+
 def draw_slot(slot: Slot, copy: dict, spec: dict) -> Image.Image:
     headline, bullets = copy.get("headline", ""), copy.get("bullets", [])[:3]
     if slot.id == "cover":
         # Thumbnail-first: a large headline across the top, the filled-in Dashboard below it.
         canvas = Image.new("RGB", (WIDTH, HEIGHT), TEAL)
         draw = ImageDraw.Draw(canvas)
-        head = font(132, bold=True)
         y = SAFE_Y + 40
-        for line in _wrap(draw, headline, head, WIDTH - 2 * SAFE_X)[:2]:
+        (head, head_lines), sub = cover_text(draw, headline, bullets)
+        for line in head_lines:
             draw.text((WIDTH // 2, y), line, font=head, fill=WHITE, anchor="ma")
-            y += 160
-        if bullets:
-            draw.text((WIDTH // 2, y + 10), "  ·  ".join(bullets[:3]), font=font(58), fill=(205, 225, 228),
-                      anchor="ma")
-            y += 110
+            y += int(head.size * 1.21)
+        if sub:
+            sub_font, sub_lines = sub
+            for line in sub_lines:
+                draw.text((WIDTH // 2, y + 10), line, font=sub_font, fill=(205, 225, 228), anchor="ma")
+                y += int(sub_font.size * 1.3)
+            y += 34
         if slot.source is not None:
             _paste_card(canvas, page_image(slot.source, 2200), (SAFE_X - 40, y + 20, WIDTH - SAFE_X + 40,
                                                                HEIGHT - SAFE_Y + 20))

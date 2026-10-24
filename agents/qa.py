@@ -47,6 +47,7 @@ from tools.chart_checks import chart_checks
 from tools.digest import pdf_text, product_digest, workbook_text
 from tools.render import RENDERS_DIR, RenderResult, render_workbooks
 from tools.spec_store import product_spec
+from tools.text_fit import overflows
 
 S = ProductStatus
 SEVERITY_POINTS = {"critical": 40, "major": 15, "minor": 5, "info": 0}
@@ -327,6 +328,23 @@ def check_example_fill(spec: dict) -> list[Finding]:
     return findings
 
 
+def check_text_fits(spec: dict, build_dir: Path, values_for: Callable[[Path], dict] | None = None) -> list[Finding]:
+    """Boxed cells whose text runs past the box: a visible defect in the workbook and the listing pictures."""
+    findings = []
+    for file_spec in spec["files"]:
+        path = build_dir / file_spec["name"]
+        if file_spec["kind"] != "xlsx" or not path.is_file():
+            continue
+        values = values_for(path) if values_for else {}
+        for o in overflows(path, values):
+            findings.append(Finding(
+                "deterministic", "text_fits", "major", f"{file_spec['name']}:{o.sheet}!{o.cell}",
+                f"'{o.text}' needs about {o.needed:g} width but the boxed cell is {o.width:g} wide, so the text "
+                "runs past its box", f"Widen the column to at least {o.needed + 1:.0f}, merge the cell across "
+                "the next column, or wrap the text"))
+    return findings
+
+
 def deterministic_checks(spec: dict, build_dir: Path, extra_words: set[str] | None = None) -> list[Finding]:
     extra_words = allowlist() if extra_words is None else extra_words
     texts: dict[str, str] = {}
@@ -404,6 +422,19 @@ class QA:
         self.renderer = renderer or (lambda workbooks, out_dir: render_workbooks(
             workbooks, out_dir, preference=settings.render_engine, soffice_path=settings.soffice_path))
 
+    def _recalculated(self, path: Path) -> dict:
+        """Formula results, so text that a formula shows (a name from another tab) is checked too."""
+        from tools.recalc import RecalcError, choose_engine, recalculate
+
+        import tempfile
+
+        try:
+            engine, soffice = choose_engine(self.settings.recalc_engine, self.settings.soffice_path)
+            with tempfile.TemporaryDirectory(prefix="hivemint-qa-") as workdir:
+                return recalculate(path, engine, Path(workdir), soffice)
+        except RecalcError:
+            return {}
+
     def __call__(self, product: Product, job: Job) -> StageResult:
         session = object_session(product)
         spec = product_spec(session, product, self.settings.products_dir)
@@ -416,6 +447,7 @@ class QA:
         build_dir = Path(build.path)
 
         findings = deterministic_checks(spec, build_dir)
+        findings += check_text_fits(spec, build_dir, self._recalculated)
         provider = OllamaProvider(self.settings, session, client=self.client)
         completion = provider.generate(job, Department.QA, PROMPT.format(digest=product_digest(spec, build_dir)),
                                        system=SYSTEM, response_model=ModelReview)  # Ollama down: raises, job retries

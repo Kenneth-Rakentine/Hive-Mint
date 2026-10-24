@@ -225,3 +225,20 @@ def test_only_a_product_that_came_from_seo_can_be_relisted(session, settings, ma
     transition(session, settings, product, S.HUMAN_REVIEW, actor="compliance", reason="ambiguous brand mention")
     with pytest.raises(TransitionBlocked, match="came from SEO"):
         relist(session, settings, product, actor="Kenny")
+
+
+def test_cover_text_always_fits_inside_the_picture():
+    from PIL import ImageDraw
+
+    from tools.listing_images import COVER_TEXT_WIDTH, cover_text
+
+    draw = ImageDraw.Draw(Image.new("RGB", (WIDTH, HEIGHT)))
+    bullets = ["Month-by-month cash-flow calendar", "Who pledged, gave and still owes",
+               "Costs follow your RSVP headcount"]
+    (head, head_lines), (sub, sub_lines) = cover_text(draw, "Wedding Budget, Payments & Family Money", bullets)
+    assert len(head_lines) <= 2
+    for f, lines in ((head, head_lines), (sub, sub_lines)):
+        assert all(draw.textlength(line, font=f) <= COVER_TEXT_WIDTH for line in lines)
+    very_long = "A headline far too long to ever fit on two lines of a listing cover picture at full size"
+    (head, head_lines), _ = cover_text(draw, very_long, [])
+    assert all(draw.textlength(line, font=head) <= COVER_TEXT_WIDTH for line in head_lines)

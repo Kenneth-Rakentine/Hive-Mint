@@ -96,6 +96,21 @@ def test_rework_command_seeds_a_brief_and_resume_returns_a_held_product(cli_env,
     assert cli.main(["resume", "999"]) == 2
 
 
+def test_rework_command_withdraws_an_approval_first(cli_env, session, settings):
+    engine, _ = cli_env
+    product = create_product(session, settings, slug="approved", name="Approved", product_type="spreadsheet")
+    advance_to(session, settings, product, ProductStatus.HUMAN_REVIEW)
+    from app.lifecycle import record_approval, transition
+    record_approval(session, product, approver="Kenny")
+    transition(session, settings, product, ProductStatus.READY_TO_PUBLISH, actor="Kenny", reason="approved")
+    session.commit()
+    seed = cli.Path(__file__).parent.parent / "config" / "rework" / \
+        "mobile-auto-detailer-income-expense-tracker-001.json"
+    assert cli.main(["rework", str(product.id), str(seed), "--actor", "Kenny"]) == 0
+    with make_session_factory(engine)() as check:
+        assert check.get(Product, product.id).status == ProductStatus.REWORK
+
+
 def test_research_command_records_a_niche(cli_env, fake_claude, capsys):
     from app.models import Opportunity, ResearchRecord
     from tests.test_research import research_answer

@@ -144,6 +144,9 @@ def cmd_rework(args) -> int:
         product = _product(session, args.product_id)
         if product is None:
             return 2
+        if product.status == ProductStatus.READY_TO_PUBLISH:  # approved but not uploaded: withdraw it first
+            transition(session, settings, product, ProductStatus.HUMAN_REVIEW, actor=args.actor,
+                       reason=f"Approval withdrawn by {args.actor} for a rework: {brief_file.summary}")
         if not can_transition(product.status, ProductStatus.REWORK):
             console.print(f"[red]A product in {product.status} cannot be sent to REWORK.[/red]")
             return 2

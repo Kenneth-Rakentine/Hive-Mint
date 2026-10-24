@@ -53,6 +53,7 @@ from reportlab.platypus import ListFlowable, ListItem, Paragraph, SimpleDocTempl
 from tools.cells import locate
 from tools.charts import bar_chart
 from tools.spec import SpecError, excel_value, normalize
+from tools.text_fit import widen_to_fit
 from tools.xlsx import (
     BOX, BRAND, CURRENCY, DATE, FORMULA_FILL, HEADER_FILL, HEADER_FONT, INPUT_FILL, INTEGER, NUMBER, PERCENT, RATE,
     SUBTITLE_FONT, TITLE_FONT, WRAP, add_validation, header_row, label, value_cell,
@@ -196,6 +197,8 @@ def build_workbook(spec: dict, file_spec: dict) -> Workbook:
         if kind not in writers:
             raise SpecError(f"sheet '{sheet['name']}': kind must be one of {sorted(writers)}")
         writers[kind](wb[sheet["name"]], sheet, layout)
+    for sheet in sheets:  # boxed labels typed into the workbook never run past their box
+        widen_to_fit(wb[sheet["name"]])
     for sheet in sheets:  # charts last: they read cells other sheets fill
         for chart_spec in sheet.get("charts", []):
             data_ws = wb[chart_spec["data"]["sheet"]]
