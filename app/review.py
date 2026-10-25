@@ -4,7 +4,9 @@ review_card() gathers the evidence trail from the database (tests, QA, Red Team,
 listing, AI usage). The decisions are explicit and logged:
 
 - approve: records the approval and moves the product to READY_TO_PUBLISH. Publishing itself stays
-  manual (MAX_PUBLICATIONS_PER_DAY is 0): the owner uploads the listing package by hand.
+  manual (MAX_PUBLICATIONS_PER_DAY is 0): the owner uploads the listing package by hand. The owner's
+  desk (agents/owner_desk.py) approves on the owner's behalf when its strict picture checks pass.
+- reject: also takes back a product the desk approved but the owner has not uploaded.
 - reject: the product ends in REJECTED.
 - relist: the listing alone goes back to SEO for a new draft (the product is unchanged).
 Changes to the product itself go through the existing rework command with a brief.
@@ -48,6 +50,14 @@ def review_card(session: Session, product: Product) -> dict:
     card: dict = {"id": product.id, "name": product.name, "status": product.status.value,
                   "status_reason": product.status_reason, "rework_cycles": product.rework_count,
                   "approved_by": product.approved_by}
+    if desk := session.scalar(select(Review).where(Review.product_id == product.id,
+                                                   Review.department == Department.OWNER_DESK)
+                              .order_by(Review.id.desc()).limit(1)):
+        report = json.loads(desk.report_json or "{}")
+        card["owner_desk"] = {"decision": desk.decision, "summary": desk.summary,
+                              "pictures": len(report.get("pictures", [])),
+                              "question": report.get("owner_question", ""),
+                              "issues": [f"{i['where']}: {i['problem']}" for i in json.loads(desk.findings_json)][:8]}
     if build is None:
         return card
     tests = session.scalars(select(TestResult).where(TestResult.build_id == build.id)).all()
@@ -96,11 +106,15 @@ def approve(session: Session, settings: Settings, product: Product, *, approver:
 
 
 def reject(session: Session, settings: Settings, product: Product, *, actor: str, reason: str) -> Product:
-    """Turn a product down for good: one waiting for review, or one held (PAUSED or ERROR)."""
-    if product.status not in (S.PAUSED, S.ERROR):
-        _require_review(product)
+    """Turn a product down for good: one waiting for review, one approved but not uploaded yet (the approval
+    is withdrawn first), or one held (PAUSED or ERROR)."""
     if not reason.strip():
         raise ValueError("Say why the product is rejected")
+    if product.status == S.READY_TO_PUBLISH:
+        transition(session, settings, product, S.HUMAN_REVIEW, actor=actor,
+                   reason=f"Approval ({product.approved_by}) withdrawn by {actor}: {reason}")
+    if product.status not in (S.PAUSED, S.ERROR):
+        _require_review(product)
     return transition(session, settings, product, S.REJECTED, actor=actor, reason=f"Rejected by {actor}: {reason}")
 
 

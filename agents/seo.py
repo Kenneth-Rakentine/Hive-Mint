@@ -30,7 +30,7 @@ from agents.departments import StageResult
 from agents.research import opportunity_for
 from agents.rework import create_brief
 from app.lifecycle import log_event
-from app.models import Build, Job, Listing, Product, ResearchRecord
+from app.models import Build, Event, Job, Listing, Product, ResearchRecord
 from app.states import Department, Outcome, ProductStatus
 from config.settings import ROOT, Settings
 from providers import headless_policy
@@ -257,7 +257,8 @@ class SEO:
             missing = [n for n in names if n not in review.checked]
             if not missing:
                 log_event(session, "listing.pictures_reviewed", actor=ACTOR, product=product, job=job,
-                          message=f"{len(names)} picture(s) inspected, {len(review.defects)} defect(s)")
+                          message=f"{len(names)} picture(s) inspected, {len(review.defects)} defect(s)",
+                          data={"checked": names, "defects": len(review.defects)})
                 return review
             last = f"the review skipped {', '.join(missing)}"
         raise ListingRejected(f"Picture review incomplete: {last}")
@@ -275,9 +276,12 @@ class SEO:
         provider = self.provider_factory(session)
         problems: list[str] = []
         last = ""
+        feedback = _desk_feedback(session, product)
         for _ in range(DRAFT_TRIES):
             note = ("\nYour previous draft was rejected for these reasons; fix every one:\n- "
                     + "\n- ".join(problems) + "\n") if problems else ""
+            if feedback:
+                note += ("\nThe owner's desk sent the last listing back. Fix every point:\n" + feedback + "\n")
             prompt = self._prompt(session, product, spec, build_dir, slots, price_range, note)
             try:
                 completion = provider.run(job, Department.SEO, prompt, headless_policy.SEO,
@@ -357,6 +361,20 @@ def draft_problems(draft: ListingDraft, spec: dict, slots: list[str], price_rang
         problems.append(f"price ${draft.price:.2f} is outside the researched ${price_range[0]:.2f}-"
                         f"${price_range[1]:.2f}")
     return problems
+
+
+def _desk_feedback(session: Session, product: Product) -> str:
+    """What the owner's desk asked to change, if it sent the latest listing back (empty otherwise)."""
+    from agents.owner_desk import desk_feedback, latest_listing
+
+    feedback = desk_feedback(session, product)
+    if not feedback:
+        return ""
+    listing = latest_listing(session, product)
+    event = session.scalar(select(Event).where(Event.product_id == product.id,
+                                               Event.event_type == "owner_desk.relisted")
+                           .order_by(Event.id.desc()).limit(1))
+    return feedback if listing is None or event.created_at >= listing.created_at else ""
 
 
 def sku(product: Product, version: int) -> str:

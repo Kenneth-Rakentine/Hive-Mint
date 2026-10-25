@@ -86,6 +86,14 @@ class Settings:
     max_publications_per_day: int = 0
     max_job_attempts: int = 3
     max_rework_cycles: int = 3
+    # Extra rework cycles the system grants on its own, per product, before pausing for the owner. Every
+    # rework comes with a concrete brief, so one more try is usually cheaper than waiting a day.
+    auto_rework_grants: int = 1
+    # The owner's desk (agents/owner_desk.py) reviews products that reach HUMAN_REVIEW from SEO. With
+    # auto-approve on (owner decision 2026-10-25) a clean verdict moves the product to READY_TO_PUBLISH;
+    # off, the verdict is only a recommendation. Upload stays manual either way.
+    desk_enabled: bool = True
+    desk_auto_approve: bool = True
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3.5:4b"
     ollama_timeout_s: float = 120.0
@@ -162,6 +170,9 @@ class Settings:
             max_publications_per_day=_int("MAX_PUBLICATIONS_PER_DAY", 0),
             max_job_attempts=max(1, _int("MAX_JOB_ATTEMPTS", 3)),
             max_rework_cycles=_int("MAX_REWORK_CYCLES", 3),
+            auto_rework_grants=max(0, _int("AUTO_REWORK_GRANTS", 1)),
+            desk_enabled=_bool("DESK_ENABLED", True),
+            desk_auto_approve=_bool("DESK_AUTO_APPROVE", True),
             ollama_url=os.getenv("OLLAMA_URL", "http://127.0.0.1:11434"),
             ollama_model=os.getenv("OLLAMA_MODEL", "qwen3.5:4b"),
             ollama_timeout_s=_float("OLLAMA_TIMEOUT_S", 120.0),
@@ -203,6 +214,8 @@ class Settings:
             "max_publications_per_day": self.max_publications_per_day,
             "max_job_attempts": self.max_job_attempts,
             "max_rework_cycles": self.max_rework_cycles,
+            "auto_rework_grants": self.auto_rework_grants,
+            "owners_desk": ("approves" if self.desk_auto_approve else "recommends") if self.desk_enabled else "off",
             "max_claude_runs_per_day": self.max_claude_runs_per_day,
             "max_products_built_per_day": self.max_products_built_per_day,
             "max_research_per_shift": self.max_research_per_shift,

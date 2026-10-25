@@ -17,7 +17,7 @@ from agents import red_team
 from agents.operations import OperationsManager
 from agents.rework import BriefFile, create_brief
 from app.db import get_engine, init_db, make_session_factory
-from app.lifecycle import create_product, resume, transition
+from app.lifecycle import create_product, log_event, resume, transition
 from app.models import Build, Event, Product, TestResult
 from app.states import IllegalTransition, ProductStatus, can_transition
 from app.status import snapshot
@@ -445,13 +445,27 @@ def cmd_review(args) -> int:
 
     with _session() as session:
         if args.product_id is None:
-            waiting = session.scalars(select(Product).where(Product.status == ProductStatus.HUMAN_REVIEW)
-                                      .order_by(Product.id)).all()
-            if not waiting:
-                console.print("Nothing is waiting for your review.")
+            from agents.owner_desk import APPROVER, desk_pending
+
+            settings = get_settings()
+            review = session.scalars(select(Product).where(Product.status == ProductStatus.HUMAN_REVIEW)
+                                     .order_by(Product.id)).all()
+            ready = session.scalars(select(Product).where(Product.status == ProductStatus.READY_TO_PUBLISH)
+                                    .order_by(Product.id)).all()
+            waiting = [p for p in review if not desk_pending(session, settings, p)]
+            console.print("Needs you:" if waiting else "Nothing needs your decision.")
             for product in waiting:
                 console.print(escape(f"  #{product.id} {product.name}: {product.status_reason}"))
-            if waiting:
+            if queued := [p for p in review if desk_pending(session, settings, p)]:
+                console.print("Waiting for the owner's desk (the next shift, or python -m app.cli desk):")
+                for product in queued:
+                    console.print(escape(f"  #{product.id} {product.name}"))
+            if ready:
+                console.print("Approved, ready for you to upload:")
+            for product in ready:
+                who = "the owner's desk" if product.approved_by == APPROVER else product.approved_by
+                console.print(escape(f"  #{product.id} {product.name} (approved by {who})"))
+            if waiting or ready:
                 console.print("See one with [bold]python -m app.cli review <id>[/bold].")
             return 0
         product = _product(session, args.product_id)
@@ -473,6 +487,13 @@ def cmd_review(args) -> int:
         lines.append(f"Compliance:  {comp['message']}")
         lines += [f"             ! {item}" for item in comp["ambiguous"] + comp["claims"]]
     lines.append(f"Rework cycles used: {card['rework_cycles']}")
+    if desk := card.get("owner_desk"):
+        lines.append(f"Owner's desk: {desk['decision']} ({desk['pictures']} picture(s) checked) - {desk['summary'][:300]}")
+        if desk["question"]:
+            lines.append(f"             ? {desk['question'][:300]}")
+        lines += [f"             ! {item}" for item in desk["issues"]]
+    if card.get("approved_by"):
+        lines.append(f"Approved by: {card['approved_by']}")
     if runs := card.get("ai_runs"):
         lines.append("AI runs:     " + ", ".join(f"{p} x{r['runs']}" for p, r in runs.items())
                      + "  (Claude runs are covered by your Max plan; nothing billed)")
@@ -483,7 +504,7 @@ def cmd_review(args) -> int:
                   "Open LISTING.txt and the images folder there to check it."]
     elif card["status"] == "HUMAN_REVIEW":
         lines += [rule, f"No listing yet. Make one: python -m app.cli relist {card['id']}"]
-    lines += [rule, "Decide:", f"  python -m app.cli approve {card['id']} --by \"Your Name\"",
+    lines += [rule, "Decide:", f"  python -m app.cli approve {card['id']} --by \"Your Name\"   (if it is still in HUMAN_REVIEW)",
               f"  python -m app.cli relist {card['id']} --reason \"what to change in the listing\"",
               f"  python -m app.cli reject {card['id']} --reason \"why\"",
               f"  python -m app.cli rework {card['id']} <brief.json>   (to change the product itself)"]
@@ -531,6 +552,62 @@ def cmd_relist(args) -> int:
     if code == 0:
         console.print("The next shift (or python -m app.cli run) writes a new listing.")
     return code
+
+
+def cmd_desk(args) -> int:
+    """Run the owner's desk now: on one product, or on every product waiting for it."""
+    from agents.operations import HARD_STOPS
+    from agents.owner_desk import OwnerDesk, desk_pending, pending_products
+    from tools.single_instance import lock_path, single_instance
+
+    settings = get_settings()
+    with single_instance(lock_path(settings.db_url)) as mine, _session() as session:
+        if not mine:
+            console.print(f"[yellow]{BUSY}[/yellow]")
+            return 1
+        if args.product_id is not None:
+            product = _product(session, args.product_id)
+            if product is None:
+                return 2
+            if not desk_pending(session, settings, product):
+                console.print(escape(f"Product {product.id} is not waiting for the owner's desk "
+                                     f"({product.status}; the desk looks once at each new listing from SEO)."))
+                return 2
+            products = [product]
+        else:
+            products = pending_products(session, settings)
+            if not products:
+                console.print("Nothing is waiting for the owner's desk.")
+                return 0
+        desk = OwnerDesk(settings)
+        for product in products:
+            try:
+                result = desk.review(session, product)
+            except HARD_STOPS as error:
+                console.print(f"[red]Stopped:[/red] {escape(str(error))}")
+                return 2
+            session.commit()
+            console.print(escape(f"#{product.id} {product.name}: {result.decision} -> {product.status}. "
+                                 f"{result.summary}"))
+    return 0
+
+
+def cmd_drafted(args) -> int:
+    """Record that an approved product's Etsy listing was saved as a draft (the owner still publishes it)."""
+    with _session() as session:
+        product = _product(session, args.product_id)
+        if product is None:
+            return 2
+        if product.status != ProductStatus.READY_TO_PUBLISH:
+            console.print(f"[red]Product {product.id} is {product.status}; only an approved product gets a draft.[/red]")
+            return 2
+        log_event(session, "listing.drafted", actor=args.actor, product=product,
+                  message=f"Etsy draft saved{': ' + args.note if args.note else ''}; the owner checks it and publishes",
+                  data={"note": args.note})
+        session.commit()
+        console.print(escape(f"Recorded: product {product.id}'s Etsy draft is saved. Open Shop Manager > Listings > "
+                             "Drafts, check it and press Publish."))
+    return 0
 
 
 def cmd_office(args) -> int:
@@ -626,6 +703,14 @@ def main(argv: list[str] | None = None) -> int:
     shift.set_defaults(func=cmd_shift)
     commands.add_parser("report", help="rewrite the daily report on the Desktop").set_defaults(func=cmd_report)
     commands.add_parser("scout", help="scout for new niches now (one headless Claude run)").set_defaults(func=cmd_scout)
+    desk = commands.add_parser("desk", help="run the owner's desk now: approve, send back or leave for you")
+    desk.add_argument("product_id", type=int, nargs="?")
+    desk.set_defaults(func=cmd_desk)
+    drafted = commands.add_parser("drafted", help="record that a product's Etsy listing is saved as a draft")
+    drafted.add_argument("product_id", type=int)
+    drafted.add_argument("--note", default="", help="e.g. 'photos still to add'")
+    drafted.add_argument("--actor", default="claude-session")
+    drafted.set_defaults(func=cmd_drafted)
     commands.add_parser("niches", help="list the scout's niche candidates").set_defaults(func=cmd_niches)
     rescore = commands.add_parser("rescore", help="send recent turned-down ideas back to Finance")
     rescore.add_argument("--days", type=int, default=14)

@@ -56,6 +56,7 @@ class Department(StrEnum):
     SEO = "SEO"
     ANALYTICS = "ANALYTICS"
     CUSTOMER_SERVICE = "CUSTOMER_SERVICE"
+    OWNER_DESK = "OWNER_DESK"  # the last look before upload, done for the owner (agents/owner_desk.py)
 
 
 class Outcome(StrEnum):

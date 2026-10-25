@@ -1,3 +1,4 @@
+from dataclasses import replace
 import pytest
 
 from app.lifecycle import LimitReached, TransitionBlocked, record_approval, transition
@@ -112,6 +113,7 @@ def test_pause_resumes_only_to_paused_from(session, settings, make_product):
 
 
 def test_rework_cap_pauses_for_human(session, settings, make_product):
+    settings = replace(settings, auto_rework_grants=0)  # the automatic extra cycle has its own test
     product = advance_to(session, settings, make_product(), S.PRODUCTION)
     for _ in range(settings.max_rework_cycles):
         transition(session, settings, product, S.REWORK, actor="testing", reason="fail")
@@ -125,6 +127,7 @@ def test_rework_cap_pauses_for_human(session, settings, make_product):
 def test_approve_rework_grants_cycles_and_resumes_a_paused_product(session, settings, make_product):
     from app.lifecycle import approve_rework
 
+    settings = replace(settings, auto_rework_grants=0)
     product = advance_to(session, settings, make_product(), S.PRODUCTION)
     for _ in range(settings.max_rework_cycles):
         transition(session, settings, product, S.REWORK, actor="testing", reason="fail")

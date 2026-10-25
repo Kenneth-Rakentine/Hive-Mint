@@ -840,11 +840,11 @@
     if (selected) showPanel(selected); else resetPanel();
   }
   function resetPanel() {
-    document.getElementById("panel").innerHTML = `<h2>The company</h2><p class="sub">Each ruin is a department. Crates are products; when one passes a gate, a keeper carries it along the road to the next building and walks home. Every ruin has an idle keeper; he only picks up his mallet while a real job runs there, and its windows glow orange. Waiting jobs queue at the door. The lighthouse lamp burns when something needs you.</p><p class="empty">Select a building to see what is there.</p>`;
+    document.getElementById("panel").innerHTML = `<h2>The company</h2><p class="sub">Each ruin is a department. Crates are products; when one passes a gate, a keeper carries it along the road to the next building and walks home. Every ruin has an idle keeper; he only picks up his mallet while a real job runs there, and its windows glow orange. Waiting jobs queue at the door. The lighthouse is the owner's desk, the last look before upload: it approves what is clean, and its lamp burns when something needs you.</p><p class="empty">Select a building to see what is there.</p>`;
   }
 
   const HINTS = {
-    keep: id => `Review it: <code>python -m app.cli review ${id}</code>`,
+    keep: id => `See the desk's verdict: <code>python -m app.cli review ${id}</code>`,
     infirmary: id => `Fix the cause, then: <code>python -m app.cli resume ${id}</code>`,
   };
   function showPanel(id) {

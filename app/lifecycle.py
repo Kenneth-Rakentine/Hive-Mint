@@ -96,13 +96,18 @@ def _check_guards(session: Session, settings: Settings, product: Product, target
         if product.previous_status != S.SEO:
             raise TransitionBlocked("Release requires a product that passed SEO; finish the remaining gates first")
         if not product.approved_by:
-            raise TransitionBlocked("Release requires a recorded human approval")
+            raise TransitionBlocked("Release requires a recorded approval (the owner's, or the owner's desk)")
     if current == S.HUMAN_REVIEW and target == S.COMPLIANCE and product.previous_status != S.COMPLIANCE:
         raise TransitionBlocked("Only a compliance referral can be returned to COMPLIANCE")
     if current == S.HUMAN_REVIEW and target == S.SEO and product.previous_status != S.SEO:
         raise TransitionBlocked("Only a product that came from SEO can have its listing redone")
     if target == S.PUBLISHED and publications_today(session, settings) >= settings.max_publications_per_day:
         raise LimitReached(f"Daily publication limit reached ({settings.max_publications_per_day})")
+
+
+def _auto_grants_used(session: Session, product: Product) -> int:
+    return session.scalar(select(func.count(Event.id)).where(Event.product_id == product.id,
+                                                             Event.event_type == "rework.auto_granted")) or 0
 
 
 def rework_limit(settings: Settings, product: Product) -> int:
@@ -134,6 +139,13 @@ def transition(
         product.rework_count += 1
         product.approved_by = product.approved_at = None
         limit = rework_limit(settings, product)
+        if product.rework_count > limit and _auto_grants_used(session, product) < settings.auto_rework_grants:
+            product.extra_rework_cycles = (product.extra_rework_cycles or 0) + 1
+            limit = rework_limit(settings, product)
+            log_event(session, "rework.auto_granted", actor="operations", product=product, job=job,
+                      message=f"Rework limit reached; one extra cycle granted automatically (limit now {limit}). "
+                              f"The next time it pauses for the owner.",
+                      data={"rework_count": product.rework_count, "limit": limit})
         if product.rework_count > limit:
             target, held_at = S.PAUSED, S.REWORK  # held at the rework it was refused; resume enters it
             reason = (f"Rework limit reached ({limit}); human decision needed: python -m app.cli approve-rework "
@@ -179,8 +191,25 @@ def approve_rework(session: Session, settings: Settings, product: Product, *, cy
     return product
 
 
+def auto_resume_rework(session: Session, settings: Settings, product: Product) -> bool:
+    """A product paused at the rework limit gets the automatic extra cycle if it hasn't had it yet (it was
+    paused before AUTO_REWORK_GRANTS existed, or the limit was lowered). Returns True if it resumed."""
+    if product.status != S.PAUSED or product.paused_from != S.REWORK:
+        return False
+    if _auto_grants_used(session, product) >= settings.auto_rework_grants:
+        return False
+    product.extra_rework_cycles = (product.extra_rework_cycles or 0) + 1
+    log_event(session, "rework.auto_granted", actor="operations", product=product,
+              message=f"One extra rework cycle granted automatically (limit now {rework_limit(settings, product)}). "
+                      f"The next time it pauses for the owner.",
+              data={"rework_count": product.rework_count, "limit": rework_limit(settings, product)})
+    resume(session, settings, product, actor="operations", reason="Automatic extra rework cycle")
+    return True
+
+
 def record_approval(session: Session, product: Product, *, approver: str, note: str = "") -> Product:
-    """A human approves the exact artifact that passed every gate. Required before release."""
+    """The owner, or the owner's desk on his behalf, approves the exact artifact that passed every gate.
+    Required before release."""
     if product.status != S.HUMAN_REVIEW or product.previous_status != S.SEO:
         raise TransitionBlocked("Only a product that passed SEO and is in HUMAN_REVIEW can be approved")
     if not approver.strip():

@@ -1,3 +1,4 @@
+from dataclasses import replace
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -36,6 +37,7 @@ def test_newest_shift_first_and_only_the_last_14_days(session, settings):
 
 
 def test_right_now_lists_approvals_paused_products_and_errors(session, settings, make_product):
+    settings = replace(settings, auto_rework_grants=0)
     waiting = advance_to(session, settings, make_product("Ready"), S.HUMAN_REVIEW)
     paused = advance_to(session, settings, make_product("Stuck"), S.QA)
     for _ in range(settings.max_rework_cycles + 1):
@@ -46,7 +48,7 @@ def test_right_now_lists_approvals_paused_products_and_errors(session, settings,
     assert paused.status == S.PAUSED
     _shift(session, 0)
     text = build_report(session, settings, NOW)
-    approvals = text[text.index("Waiting for your approval"):text.index("Paused products")]
+    approvals = text[text.index("Needs you (HUMAN_REVIEW)"):text.index("Paused products")]
     assert f"#{waiting.id} {waiting.name}" in approvals
     assert f"python -m app.cli approve-rework {paused.id}" in text
     assert "Products in ERROR" in text

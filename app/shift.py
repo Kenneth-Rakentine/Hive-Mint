@@ -5,14 +5,15 @@ Pre-flight, in order: skip on battery (SKIP_ON_BATTERY), stay inside the shift w
 
 Then the steps run in a fixed order:
   research -> finance -> spec -> production -> testing -> qa (incl. Visual QA) -> red_team
-  -> rework -> compliance (Compliance and SEO, ending in HUMAN_REVIEW)
-and production..compliance repeat while products keep moving, so a reworked product is rebuilt
+  -> rework -> compliance (Compliance and SEO, ending in HUMAN_REVIEW) -> desk (the owner's desk:
+  approve to READY_TO_PUBLISH, send back, or leave for the owner)
+and production..desk repeat while products keep moving, so a reworked product is rebuilt
 and reviewed again in the same shift.
 
 Before each step the window is checked: when it has ended, the shift stops cleanly after the step
 that was running. A hard limit (daily Claude runs, ideas, the billing guard) stops the shift the
 moment it is hit; the interrupted job goes back to the queue. All state lives in the database, so
-the next shift simply continues. Publications stay at 0: nothing here publishes.
+the next shift simply continues. Publications stay at 0: nothing here publishes; the owner uploads.
 """
 
 from __future__ import annotations
@@ -27,12 +28,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from agents import red_team
+from agents.owner_desk import OwnerDesk, pending_products
 from agents.finance import select_opportunities
 from agents.operations import HARD_STOPS, OperationsManager
 from agents.research import ResearchFailed, opportunity_for, run_niche_research
 from agents.scout import ScoutFailed, next_candidate, run_scout, scout_due
 from app.db import utcnow
-from app.lifecycle import log_event
+from app.lifecycle import auto_resume_rework, log_event
 from app.models import AgentRun, Job, Opportunity, Product, ResearchRecord, Shift
 from app.states import JobStatus, ProductStatus
 from config.niches import RESEARCH_REFRESH_DAYS, SEED_NICHES
@@ -43,7 +45,7 @@ from tools.power import on_battery
 
 S = ProductStatus
 ACTOR = "shift"
-STEPS = ("research", "finance", "spec", "production", "testing", "qa", "red_team", "rework", "compliance")
+STEPS = ("research", "finance", "spec", "production", "testing", "qa", "red_team", "rework", "compliance", "desk")
 REPEATING = STEPS[3:]
 MAX_ROUNDS = 6  # production..compliance passes per shift; each rework cycle needs one
 MAX_TICKS = 20  # per gate, a safety bound
@@ -66,6 +68,7 @@ class ShiftRunner:
     researcher: Callable = run_niche_research
     scout: Callable = run_scout
     reviewer: Callable = red_team.run_headless
+    desk: Callable | None = None  # (session, product) -> DeskResult; default agents.owner_desk.OwnerDesk
     subscription_check: Callable = check_subscription
     log: list[dict] = field(default_factory=list)
     _created_last: int = 0
@@ -74,6 +77,7 @@ class ShiftRunner:
     def __post_init__(self):
         self.ops = self.ops or OperationsManager(self.session, self.settings)
         self.battery = self.battery or on_battery
+        self.desk = self.desk or OwnerDesk(self.settings).review
 
     # ------------------------------------------------------------------ the run
 
@@ -85,6 +89,7 @@ class ShiftRunner:
         self.session.commit()
         self._runs_before = self._headless_total()
         self._recover_interrupted()
+        self._auto_resume()
         try:
             stop = self._preflight() or self._steps()
         except Exception as error:  # a bug, not a limit: record it and stop cleanly
@@ -234,6 +239,14 @@ class ShiftRunner:
     def _do_compliance(self) -> tuple[int, str]:
         return self._gate({S.COMPLIANCE, S.SEO}, "compliance/SEO job(s)")
 
+    def _do_desk(self) -> tuple[int, str]:
+        decisions = []
+        for product in pending_products(self.session, self.settings):
+            result = self.desk(self.session, product)
+            self.session.commit()
+            decisions.append(f"#{product.id} {result.decision}")
+        return len(decisions), ", ".join(decisions) or "nothing for the owner's desk"
+
     # ------------------------------------------------------------------ helpers
 
     def _recover_interrupted(self) -> None:
@@ -251,6 +264,11 @@ class ShiftRunner:
                 job.attempts = max(0, job.attempts - 1)
             log_event(self.session, "job.recovered", actor=ACTOR, job=job,
                       message=f"Interrupted job found at shift start; now {job.status.value}")
+        self.session.commit()
+
+    def _auto_resume(self) -> None:
+        for product in self.session.scalars(select(Product).where(Product.status == S.PAUSED)).all():
+            auto_resume_rework(self.session, self.settings, product)
         self.session.commit()
 
     def _gate(self, statuses: set[ProductStatus], label: str) -> tuple[int, str]:

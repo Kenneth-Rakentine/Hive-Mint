@@ -13,6 +13,7 @@ import json
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from agents.owner_desk import APPROVER as DESK_APPROVER, needs_owner
 from app.models import AgentRun, Event, Job, Listing, Product, Shift
 from app.states import Department, JobStatus, ProductStatus
 from config.settings import Settings
@@ -33,7 +34,7 @@ BUILDINGS: tuple[tuple[str, str, Department | None, tuple[ProductStatus, ...]], 
     ("red_team", "Red Tower", D.RED_TEAM, (S.RED_TEAM,)),
     ("compliance", "Courthouse", D.COMPLIANCE, (S.COMPLIANCE,)),
     ("seo", "Market Stall", D.SEO, (S.SEO,)),
-    ("keep", "The Lighthouse", None, (S.HUMAN_REVIEW, S.READY_TO_PUBLISH)),
+    ("keep", "The Lighthouse", D.OWNER_DESK, (S.HUMAN_REVIEW, S.READY_TO_PUBLISH)),
     ("store", "Storefront", None, (S.PUBLISHED,)),
     ("infirmary", "Infirmary", None, (S.PAUSED, S.ERROR)),
     ("graveyard", "Graveyard", None, (S.REJECTED, S.RETIRED)),
@@ -76,7 +77,9 @@ def office_state(session: Session, settings: Settings, disk: dict | None = None)
             "claude_runs_cap": settings.max_claude_runs_per_day,
             "claude_reported_usd": round(reported / 1_000_000, 2),  # covered by the Max plan, never billed
             "products": len(products),
-            "waiting_for_you": sum(1 for p in products if p.status == S.HUMAN_REVIEW),
+            "waiting_for_you": sum(1 for p in products if needs_owner(session, settings, p)),
+            "approved_by_desk": sum(1 for p in products if p.status == S.READY_TO_PUBLISH
+                                    and (p.approved_by or "") == DESK_APPROVER),
             "disk_free_gb": disk.get("free_gb"),
             "hivemint_gb": disk.get("hivemint_folder_gb"),
         },

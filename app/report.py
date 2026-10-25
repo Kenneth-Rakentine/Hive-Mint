@@ -91,10 +91,12 @@ def _right_now(session: Session, settings: Settings, now: datetime) -> list[str]
     def products(status):
         return session.scalars(select(Product).where(Product.status == status).order_by(Product.id)).all()
 
-    lines = [RULE, "RIGHT NOW", RULE, "", "Waiting for your approval (HUMAN_REVIEW):"]
-    waiting = products(S.HUMAN_REVIEW)
+    from agents.owner_desk import APPROVER as DESK, desk_pending
     from app.review import latest_listing
 
+    lines = [RULE, "RIGHT NOW", RULE, "", "Needs you (HUMAN_REVIEW):"]
+    in_review = products(S.HUMAN_REVIEW)
+    waiting = [p for p in in_review if not desk_pending(session, settings, p)]
     for p in waiting:
         lines.append(f"  #{p.id} {p.name}: {p.status_reason}")
         if (listing := latest_listing(session, p)) is not None:
@@ -102,11 +104,23 @@ def _right_now(session: Session, settings: Settings, now: datetime) -> list[str]
         lines.append(f"      to decide: python -m app.cli review {p.id}")
     if not waiting:
         lines.append("  none")
+    if desk_queue := [p for p in in_review if desk_pending(session, settings, p)]:
+        lines += ["", "Waiting for the owner's desk (next shift looks at them):"]
+        lines += [f"  #{p.id} {p.name}" for p in desk_queue]
     ready = products(S.READY_TO_PUBLISH)
     lines += ["", "Approved, waiting for you to upload (READY_TO_PUBLISH):"]
     for p in ready:
         listing = latest_listing(session, p)
-        lines.append(f"  #{p.id} {p.name}" + (f": follow UPLOAD_STEPS.txt in {listing.path}" if listing else ""))
+        who = "approved by the owner's desk; look it over as you upload" if p.approved_by == DESK \
+            else f"approved by {p.approved_by}"
+        lines.append(f"  #{p.id} {p.name} ({who})" + (f": follow UPLOAD_STEPS.txt in {listing.path}" if listing else ""))
+        if drafted := session.scalar(select(Event).where(Event.product_id == p.id,
+                                                         Event.event_type == "listing.drafted")
+                                     .order_by(Event.id.desc()).limit(1)):
+            lines.append(f"      Etsy draft saved: {drafted.message}")
+        if p.approved_by == DESK:
+            lines.append(f"      the desk's notes: python -m app.cli review {p.id}   "
+                         f"changed your mind: python -m app.cli reject {p.id} --reason \"...\"")
     if not ready:
         lines.append("  none")
     lines += ["", "Paused products:"]

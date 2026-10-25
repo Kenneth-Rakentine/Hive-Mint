@@ -6,7 +6,7 @@ These rules are permanent. Change them only when the owner explicitly asks.
 
 ## Departments are roles, not models
 
-Operations, Research, Finance, Product Design, Production, Testing, QA, Red Team, Compliance, SEO, Analytics, Customer Service.
+Operations, Research, Finance, Product Design, Production, Testing, QA, Red Team, Compliance, SEO, Owner's Desk, Analytics, Customer Service.
 
 A department is a role with its own inputs, checks and outputs. It is not a separate model or process. Any provider can perform a role.
 
@@ -28,6 +28,7 @@ Side states: `REWORK`, `REJECTED`, `PAUSED`, `RETIRED`, `ERROR`.
 - **No skipped gates.** Every product passes every gate in order. The transition table in `app/states.py`, plus the guards in `app/lifecycle.py`, reject illegal moves.
 - **Failures route backward on purpose**, to REWORK or an earlier gate, with a recorded reason. A failure is never silently retried forward.
 - `app.lifecycle.transition()` is the only code allowed to change a product's status.
+- **The owner's desk** (`agents/owner_desk.py`) handles HUMAN_REVIEW for products that come from SEO: deterministic package and picture checks, then one headless Claude look with a per-picture checklist. It approves to READY_TO_PUBLISH, sends back (REWORK or SEO), or leaves the product for the owner. Compliance referrals always wait for the owner.
 
 ## Deterministic first
 
@@ -67,9 +68,10 @@ Headless Claude Code runs (owner-approved in v0.4):
 
 ## Safety
 
-- **A human must approve before anything is published.**
+- **Nothing is listed without a recorded approval, and a human always does the upload.** Owner decision (2026-10-25): the owner's desk may approve on his behalf, but only when the strict picture checks pass: every picture opened and checked against the fixed checklist, a second look after SEO's picture review, the exact tested ZIP in the package, no blank or off-size pictures. Any ticked box sends the product back. `DESK_AUTO_APPROVE=false` turns desk approvals back into recommendations. The owner can withdraw a desk approval with `reject` or `rework` until he uploads.
+- Uploading stays manual (**0** publications/day). A Claude session may fill an Etsy listing as a **draft** in the browser (`.claude/commands/etsy-draft.md`); only the owner presses Publish.
 - Compliance ambiguity goes to HUMAN_REVIEW. Never guess.
-- Retries are bounded: per job (`MAX_JOB_ATTEMPTS`) and per product rework cycle (`MAX_REWORK_CYCLES`).
+- Retries are bounded: per job (`MAX_JOB_ATTEMPTS`) and per product rework cycle (`MAX_REWORK_CYCLES`, plus `AUTO_REWORK_GRANTS` = **1** extra cycle granted automatically before a product pauses for the owner).
 - Secrets live only in `.env`, which is gitignored. Never commit keys, customer data or `data/`.
 
 ## Storage & cleanup tracking
@@ -83,7 +85,7 @@ Whenever you install, download, create, cache or change anything outside the rep
 ## Architecture
 
 - Storefronts (Etsy, Gumroad, etc.) are **output adapters**, not the core. The core is products, gates and the database.
-- The pixel GUI comes **last** and only visualizes database state. It never drives logic or shows simulated activity. Owner-approved ambience: an idle resident keeper at every building, the sea, the stars, trees and rocks, and three bats that fly past now and then; a keeper is shown *working*, and the building's windows glow orange, only while a job there is RUNNING; a keeper carries a crate along the road only when a product's status really changed.
+- The pixel GUI comes **last** and only visualizes database state. It never drives logic or shows simulated activity. Owner-approved ambience: an idle resident keeper at every building, the sea, the stars, trees and rocks, and three bats that fly past now and then; a keeper is shown *working*, and the building's windows glow orange, only while a job there is RUNNING; a keeper carries a crate along the road only when a product's status really changed. The lighthouse is the owner's desk; its lamp burns only when something needs the owner.
 
 ## Working in this repo
 

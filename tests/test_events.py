@@ -35,7 +35,7 @@ def test_each_transition_logs_from_and_to(session, settings, make_product):
 
 
 def test_redirected_rework_records_requested_status(session, settings, make_product):
-    settings_no_rework = type(settings)(db_url=settings.db_url, max_rework_cycles=0)
+    settings_no_rework = type(settings)(db_url=settings.db_url, max_rework_cycles=0, auto_rework_grants=0)
     product = make_product()
     for status in (S.RESEARCH, S.FINANCE_REVIEW, S.SPECIFICATION, S.PRODUCTION):
         transition(session, settings, product, status, actor="t", reason="ok")
