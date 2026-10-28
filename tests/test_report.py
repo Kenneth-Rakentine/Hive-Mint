@@ -37,7 +37,7 @@ def test_newest_shift_first_and_only_the_last_14_days(session, settings):
 
 
 def test_right_now_lists_approvals_paused_products_and_errors(session, settings, make_product):
-    settings = replace(settings, auto_rework_grants=0)
+    settings = replace(settings, auto_rework_grants=0, redesigns_per_product=0, auto_drop_failed=False)
     waiting = advance_to(session, settings, make_product("Ready"), S.HUMAN_REVIEW)
     paused = advance_to(session, settings, make_product("Stuck"), S.QA)
     for _ in range(settings.max_rework_cycles + 1):

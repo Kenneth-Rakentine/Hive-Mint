@@ -167,7 +167,8 @@ def test_the_owner_can_take_back_a_desk_approval(session, settings, sample_produ
 
 
 def test_one_extra_rework_cycle_is_granted_automatically_then_it_pauses(session, settings, make_product):
-    settings = replace(settings, max_rework_cycles=1, auto_rework_grants=1)
+    settings = replace(settings, max_rework_cycles=1, auto_rework_grants=1, redesigns_per_product=0,
+                       auto_drop_failed=False)
     product = make_product()
     advance_to(session, settings, product, S.QA)
     transition(session, settings, product, S.REWORK, actor="qa", reason="fail 1")
@@ -240,12 +241,14 @@ def test_the_desk_command_records_a_verdict(session, engine, settings, sample_pr
 def test_a_product_paused_before_auto_grants_existed_gets_its_extra_cycle_once(session, settings, make_product):
     from app.lifecycle import auto_resume_rework
 
-    strict = replace(settings, max_rework_cycles=0, auto_rework_grants=0)
+    strict = replace(settings, max_rework_cycles=0, auto_rework_grants=0, redesigns_per_product=0,
+                     auto_drop_failed=False)
     product = make_product()
     advance_to(session, strict, product, S.QA)
     transition(session, strict, product, S.REWORK, actor="qa", reason="fail")
     assert product.status == S.PAUSED
-    once = replace(settings, max_rework_cycles=0, auto_rework_grants=1)
+    once = replace(settings, max_rework_cycles=0, auto_rework_grants=1, redesigns_per_product=0,
+                   auto_drop_failed=False)
     assert auto_resume_rework(session, once, product) and product.status == S.REWORK
     transition(session, once, product, S.PRODUCTION, actor="design", reason="rebuild")
     advance_to(session, once, product, S.QA)

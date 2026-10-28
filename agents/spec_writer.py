@@ -26,9 +26,9 @@ from sqlalchemy.orm import Session, object_session
 
 from agents.departments import StageResult, product_design as deterministic_design
 from agents.research import opportunity_for, owner_sourced
-from agents.rework import active_brief, create_brief, uncovered
+from agents.rework import ACTIVE_BRIEF, SUPERSEDED, active_brief, create_brief, uncovered
 from app.lifecycle import log_event
-from app.models import Job, Product, ResearchRecord, Review, ReworkBrief
+from app.models import Event, Job, Product, ResearchRecord, Review, ReworkBrief
 from app.states import Department, JobStatus, Outcome, ProductStatus
 from config.settings import ROOT, Settings
 from providers import headless_policy
@@ -117,6 +117,38 @@ Also:
 When spec-check prints SPEC OK, answer with JSON matching the provided schema."""
 
 
+REDESIGN_PROMPT = """You are Hive-Mint's Product Design department. Product "{name}" kept failing review: it used up
+all its rework rounds. Go back to the drawing board and design it again from scratch.
+
+The old spec (version {version}) is at {old} for reference: read it to see what the buyer needs, but do not patch
+it. Most failures came from doing too much; the new design should be simpler and sturdier: fewer sheets and columns,
+2 charts at most, short labels and text that fit their cells, an example workbook filled in everywhere.
+
+WHAT KEPT GOING WRONG (newest first; design so none of it can happen again):
+{history}
+
+OPPORTUNITY AND RESEARCH:
+{background}
+
+Write the complete new spec as JSON to {draft}. Set "slug" to "{slug}", "name" to the product name,
+"spec_version" to {next_version}, "resolves" to [], and start a fresh changelog entry saying it is a redesign.
+
+{rules}
+
+When spec-check prints SPEC OK, answer with JSON matching the provided schema."""
+
+
+def redesign_pending(session: Session, product: Product) -> bool:
+    """A redesign was ordered (app.lifecycle) and no spec has been written since."""
+    ordered = session.scalar(select(Event).where(Event.product_id == product.id,
+                                                 Event.event_type == "product.redesign")
+                             .order_by(Event.id.desc()).limit(1))
+    if ordered is None:
+        return False
+    current = latest_version(session, product)
+    return current is None or current.created_at < ordered.created_at
+
+
 def spec_problems(spec: dict) -> list[str]:
     """Product-level rules on top of tools.spec.validate_spec. Empty means acceptable."""
     try:
@@ -194,6 +226,8 @@ class ProductDesign:
     def rework(self, product: Product, job: Job) -> StageResult:
         session = object_session(product)
         spec = product_spec(session, product, self.settings.products_dir)
+        if spec is not None and redesign_pending(session, product):
+            return self.redesign(session, product, job)
         brief = active_brief(session, product)
         if brief is None and product.previous_status in (S.PRODUCTION, S.TESTING) and spec is not None:
             brief = self._brief_from_failure(session, product, job)
@@ -229,6 +263,42 @@ class ProductDesign:
         return StageResult(Outcome.PASS, S.PRODUCTION,
                            f"Spec v{row.version} implements rework brief #{brief.id} ({', '.join(missing)})",
                            {"brief_id": brief.id, "spec_version_id": row.id})
+
+    def redesign(self, session: Session, product: Product, job: Job) -> StageResult:
+        """Back to the drawing board: a fresh spec written from the need and every failure so far."""
+        current = latest_version(session, product)
+        draft = self._draft_path(product)
+        draft.parent.mkdir(parents=True, exist_ok=True)
+        draft.unlink(missing_ok=True)
+        old = draft.with_name("previous-spec.json")
+        old.write_text(current.spec_json + "\n", encoding="utf-8")
+        briefs = session.scalars(select(ReworkBrief).where(ReworkBrief.product_id == product.id)
+                                 .order_by(ReworkBrief.id.desc()).limit(8)).all()
+        history = "\n".join(f"- [{b.source}] {b.summary[:300]}" + "".join(
+            f"\n    * {c['reason'][:200]}" for c in json.loads(b.required_changes_json)[:5]) for b in briefs) or "- none"
+        background = "Owner-specified product: no research record. Keep the old spec's purpose."
+        if (opp := opportunity_for(session, product)) is not None:
+            record = session.get(ResearchRecord, opp.research_id)
+            background = json.dumps({"title": opp.title, "description": opp.description,
+                                     **json.loads(opp.data_json), "research": record.summary,
+                                     **{k: v for k, v in json.loads(record.findings_json).items()
+                                        if k in ("complaints", "gaps", "selling")}}, indent=1)[:8000]
+        prompt = REDESIGN_PROMPT.format(name=product.name, slug=product.slug, version=current.version,
+                                        next_version=current.version + 1, old=_rel(old), draft=_rel(draft),
+                                        history=history, background=background, rules=self._rules(draft))
+        spec, answer = self._run(session, job, prompt, draft)
+        spec["slug"], spec["spec_version"], spec["resolves"] = product.slug, current.version + 1, []
+        self._accept(spec, draft)
+        for brief in session.scalars(select(ReworkBrief).where(ReworkBrief.product_id == product.id,
+                                                               ReworkBrief.status.in_(ACTIVE_BRIEF))):
+            brief.status = SUPERSEDED  # the redesign replaces them; the build is a fresh first build of the design
+        row = save_version(session, product, spec, author="claude-headless", reason=f"Redesign: {answer.summary}",
+                           products_dir=self.settings.products_dir, job=job)
+        log_event(session, "spec.redesigned", actor=ACTOR, product=product, job=job,
+                  message=f"Spec v{row.version} is a redesign from scratch: {answer.summary}"[:900],
+                  data={"spec_version_id": row.id})
+        return StageResult(Outcome.PASS, S.PRODUCTION, f"Redesigned from scratch as spec v{row.version}: "
+                                                       f"{answer.summary}"[:500], {"spec_version_id": row.id})
 
     def _brief_from_failure(self, session: Session, product: Product, job: Job) -> ReworkBrief:
         """A failed build or test leaves no brief; write one so the spec gets fixed instead of rebuilt as is."""

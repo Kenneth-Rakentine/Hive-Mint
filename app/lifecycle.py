@@ -105,9 +105,20 @@ def _check_guards(session: Session, settings: Settings, product: Product, target
         raise LimitReached(f"Daily publication limit reached ({settings.max_publications_per_day})")
 
 
-def _auto_grants_used(session: Session, product: Product) -> int:
+def _events(session: Session, product: Product, event_type: str) -> int:
     return session.scalar(select(func.count(Event.id)).where(Event.product_id == product.id,
-                                                             Event.event_type == "rework.auto_granted")) or 0
+                                                             Event.event_type == event_type)) or 0
+
+
+def _auto_grants_used(session: Session, product: Product) -> int:
+    return _events(session, product, "rework.auto_granted")
+
+
+def _owner_specified(product: Product) -> bool:
+    """A product the owner specified by hand (config/specs/<slug>.json) is never dropped automatically."""
+    from tools.spec import SPEC_DIR
+
+    return (SPEC_DIR / f"{product.slug}.json").is_file()
 
 
 def rework_limit(settings: Settings, product: Product) -> int:
@@ -135,6 +146,7 @@ def transition(
 
     requested = target
     held_at = current
+    drop = False  # out of rework cycles and redesigns: rejected right after the move to REWORK
     if target == S.REWORK and current not in HOLD:  # resuming a held rework is not a new cycle
         product.rework_count += 1
         product.approved_by = product.approved_at = None
@@ -143,10 +155,20 @@ def transition(
             product.extra_rework_cycles = (product.extra_rework_cycles or 0) + 1
             limit = rework_limit(settings, product)
             log_event(session, "rework.auto_granted", actor="operations", product=product, job=job,
-                      message=f"Rework limit reached; one extra cycle granted automatically (limit now {limit}). "
-                              f"The next time it pauses for the owner.",
+                      message=f"Rework limit reached; one extra cycle granted automatically (limit now {limit}).",
                       data={"rework_count": product.rework_count, "limit": limit})
-        if product.rework_count > limit:
+        if product.rework_count > limit and _events(session, product, "product.redesign") < settings.redesigns_per_product:
+            # Back to the drawing board: Product Design writes a fresh spec (agents/spec_writer.py), and the
+            # redesign starts with a fresh rework budget.
+            redesign = _events(session, product, "product.redesign") + 1
+            log_event(session, "product.redesign", actor="operations", product=product, job=job,
+                      message=f"Rework limit reached ({limit}); redesign #{redesign} from scratch. Last failure: {reason}",
+                      data={"rework_count": product.rework_count, "redesign": redesign})
+            product.rework_count, product.extra_rework_cycles = 1, 0
+            reason = f"Back to the drawing board (redesign #{redesign}): {reason}"
+        elif product.rework_count > limit and settings.auto_drop_failed and not _owner_specified(product):
+            drop = True
+        elif product.rework_count > limit:
             target, held_at = S.PAUSED, S.REWORK  # held at the rework it was refused; resume enters it
             reason = (f"Rework limit reached ({limit}); human decision needed: python -m app.cli approve-rework "
                       f"{product.id}. Last failure: {reason}")
@@ -164,6 +186,10 @@ def transition(
     log_event(session, "product.transition", actor=actor, product=product, job=job, run=run, from_status=current,
               to_status=target, message=reason,
               data={"requested": requested} if requested != target else None)
+    if drop:
+        transition(session, settings, product, S.REJECTED, actor="operations", job=job,
+                   reason=f"Dropped: still failing after {settings.redesigns_per_product} redesign(s); its slot goes "
+                          f"to a new idea. Last failure: {reason}")
     return product
 
 
@@ -192,19 +218,26 @@ def approve_rework(session: Session, settings: Settings, product: Product, *, cy
 
 
 def auto_resume_rework(session: Session, settings: Settings, product: Product) -> bool:
-    """A product paused at the rework limit gets the automatic extra cycle if it hasn't had it yet (it was
-    paused before AUTO_REWORK_GRANTS existed, or the limit was lowered). Returns True if it resumed."""
+    """A product paused at the rework limit gets the automatic extra cycle if it hasn't had it yet, else its
+    redesign if it hasn't had that (it was paused before these existed). Returns True if it resumed."""
     if product.status != S.PAUSED or product.paused_from != S.REWORK:
         return False
-    if _auto_grants_used(session, product) >= settings.auto_rework_grants:
-        return False
-    product.extra_rework_cycles = (product.extra_rework_cycles or 0) + 1
-    log_event(session, "rework.auto_granted", actor="operations", product=product,
-              message=f"One extra rework cycle granted automatically (limit now {rework_limit(settings, product)}). "
-                      f"The next time it pauses for the owner.",
-              data={"rework_count": product.rework_count, "limit": rework_limit(settings, product)})
-    resume(session, settings, product, actor="operations", reason="Automatic extra rework cycle")
-    return True
+    if _auto_grants_used(session, product) < settings.auto_rework_grants:
+        product.extra_rework_cycles = (product.extra_rework_cycles or 0) + 1
+        log_event(session, "rework.auto_granted", actor="operations", product=product,
+                  message=f"One extra rework cycle granted automatically (limit now {rework_limit(settings, product)}).",
+                  data={"rework_count": product.rework_count, "limit": rework_limit(settings, product)})
+        resume(session, settings, product, actor="operations", reason="Automatic extra rework cycle")
+        return True
+    if _events(session, product, "product.redesign") < settings.redesigns_per_product:
+        redesign = _events(session, product, "product.redesign") + 1
+        log_event(session, "product.redesign", actor="operations", product=product,
+                  message=f"Paused at the rework limit; redesign #{redesign} from scratch",
+                  data={"rework_count": product.rework_count, "redesign": redesign})
+        product.rework_count, product.extra_rework_cycles = 1, 0
+        resume(session, settings, product, actor="operations", reason=f"Back to the drawing board (redesign #{redesign})")
+        return True
+    return False
 
 
 def record_approval(session: Session, product: Product, *, approver: str, note: str = "") -> Product:

@@ -92,6 +92,11 @@ class Settings:
     # The owner's desk (agents/owner_desk.py) reviews products that reach HUMAN_REVIEW from SEO. With
     # auto-approve on (owner decision 2026-10-25) a clean verdict moves the product to READY_TO_PUBLISH;
     # off, the verdict is only a recommendation. Upload stays manual either way.
+    # Back to the drawing board: a product that runs out of rework cycles gets this many fresh redesigns (a new
+    # spec from scratch that learns from every failure, with a fresh rework budget). When those fail too, it is
+    # dropped (REJECTED) so its slot goes to a new idea; owner-specified products pause for the owner instead.
+    redesigns_per_product: int = 1
+    auto_drop_failed: bool = True
     desk_enabled: bool = True
     desk_auto_approve: bool = True
     ollama_url: str = "http://127.0.0.1:11434"
@@ -178,6 +183,8 @@ class Settings:
             max_job_attempts=max(1, _int("MAX_JOB_ATTEMPTS", 3)),
             max_rework_cycles=_int("MAX_REWORK_CYCLES", 3),
             auto_rework_grants=max(0, _int("AUTO_REWORK_GRANTS", 1)),
+            redesigns_per_product=max(0, _int("REDESIGNS_PER_PRODUCT", 1)),
+            auto_drop_failed=_bool("AUTO_DROP_FAILED", True),
             desk_enabled=_bool("DESK_ENABLED", True),
             desk_auto_approve=_bool("DESK_AUTO_APPROVE", True),
             ollama_url=os.getenv("OLLAMA_URL", "http://127.0.0.1:11434"),
@@ -223,6 +230,8 @@ class Settings:
             "max_job_attempts": self.max_job_attempts,
             "max_rework_cycles": self.max_rework_cycles,
             "auto_rework_grants": self.auto_rework_grants,
+            "redesigns_per_product": self.redesigns_per_product,
+            "auto_drop_failed": self.auto_drop_failed,
             "owners_desk": ("approves" if self.desk_auto_approve else "recommends") if self.desk_enabled else "off",
             "max_claude_runs_per_day": self.max_claude_runs_per_day,
             "max_products_built_per_day": self.max_products_built_per_day,
