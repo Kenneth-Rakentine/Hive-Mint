@@ -49,6 +49,8 @@ STEPS = ("research", "finance", "spec", "production", "testing", "qa", "red_team
 REPEATING = STEPS[3:]
 MAX_ROUNDS = 6  # production..compliance passes per shift; each rework cycle needs one
 MAX_TICKS = 20  # per gate, a safety bound
+# Started but not finished: counts toward MAX_PRODUCTS_IN_PROGRESS.
+IN_PROGRESS = (S.SPECIFICATION, S.PRODUCTION, S.TESTING, S.QA, S.RED_TEAM, S.COMPLIANCE, S.SEO, S.REWORK)
 
 
 def in_window(settings: Settings, now: datetime) -> bool:
@@ -154,9 +156,20 @@ class ShiftRunner:
 
     # ------------------------------------------------------------------ steps
 
+    def _in_progress(self) -> int:
+        return self.session.scalar(select(func.count(Product.id)).where(Product.status.in_(IN_PROGRESS)))
+
+    def _busy(self) -> str | None:
+        count, limit = self._in_progress(), self.settings.max_products_in_progress
+        if limit and count >= limit:
+            return f"{count} products in progress (limit {limit}); finishing those before starting new ones"
+        return None
+
     def _do_research(self) -> tuple[int, str]:
         """Pick one niche and research it in depth. The best NEW scout candidate comes first; when none is
         left and the last scout is a week old, scout for new ones; the seed niches are the fallback."""
+        if busy := self._busy():
+            return 0, f"skipped: {busy}"
         note = ""
         candidate = next_candidate(self.session)
         if candidate is None and scout_due(self.session, self.now()):
@@ -189,6 +202,10 @@ class ShiftRunner:
         return left >= self.settings.research_reserve_runs
 
     def _do_finance(self) -> tuple[int, str]:
+        if busy := self._busy():
+            self._created_last = 0
+            moved = self._drain({S.IDEA, S.RESEARCH, S.FINANCE_REVIEW})
+            return moved, f"no new products: {busy}; {moved} gate job(s)"
         created = select_opportunities(self.session, self.settings)
         self._created_last = len(created)
         self.session.commit()

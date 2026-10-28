@@ -329,3 +329,20 @@ def test_research_rounds_stop_at_the_limit_and_keep_claude_runs_for_building(ses
     tight = replace(settings, max_claude_runs_per_day=5)  # fewer than research_reserve_runs left
     runner(session, tight, calls, researcher=weak_researcher(calls)).run()
     assert sum(1 for c in calls if c[0] == "research" and isinstance(c[1], str)) == 1
+
+
+def test_no_new_research_or_products_while_too_many_are_in_progress(session, settings, make_product):
+    from dataclasses import replace
+
+    from app.shift import ShiftRunner
+    from tests.conftest import advance_to
+
+    settings = replace(settings, max_products_in_progress=2)
+    for _ in range(2):
+        advance_to(session, settings, make_product(), S.SPECIFICATION)
+    runner = ShiftRunner(session, settings, ignore_window=True, battery=lambda: False,
+                         subscription_check=lambda st: None, scout=lambda s, st: [],
+                         researcher=lambda *a: (_ for _ in ()).throw(AssertionError("no research while busy")))
+    ran, summary = runner._do_research()
+    assert ran == 0 and "2 products in progress (limit 2)" in summary
+    assert "no new products" in runner._do_finance()[1]

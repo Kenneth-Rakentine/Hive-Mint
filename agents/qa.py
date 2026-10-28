@@ -16,7 +16,7 @@ value axis is a duplicate-label defect, whatever the model thought of it.
 
 The model cannot fail a product on its own: its findings are capped at "major", and their
 deductions at QA_MODEL_MAX_DEDUCTION (text) and QA_VISION_MAX_DEDUCTION (charts), which
-together may not exceed 100 - QA_PASS_SCORE. A critical or major deterministic finding, or
+together may use at most half of 100 - QA_PASS_SCORE (so a few small deterministic findings can still pass). A critical or major deterministic finding, or
 a score under QA_PASS_SCORE, sends the product to REWORK with a rework brief.
 """
 
@@ -196,7 +196,8 @@ def words(text: str) -> list[str]:
         word = word.strip("'")
         if word.endswith("'s"):
             word = word[:-2]
-        if len(word) > 1 and not word.isupper():  # skip acronyms (IRS, PDF, PPE)
+        if len(word) > 1 and not word.isupper() and not (word.endswith("s") and word[:-1].isupper()):
+            # skip acronyms and their plurals (IRS, PDF, RSVPs, GPAs)
             out.append(word.lower())
     return out
 

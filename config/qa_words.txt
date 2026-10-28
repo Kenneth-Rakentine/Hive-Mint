@@ -12,3 +12,12 @@ venmo
 zelle
 # Month abbreviation on chart axes (Jan-Dec); the dictionary knows the others
 sep
+prefilled
+prefill
+homeschool
+homeschooled
+homeschooling
+homeschooler
+homeschoolers
+preorder
+preorders

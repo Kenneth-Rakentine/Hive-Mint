@@ -104,8 +104,11 @@ class Settings:
     # the text clarity pass and the chart vision pass are capped separately, and together they may not
     # deduct more than 100 - qa_pass_score, so the local model can never fail a product on its own.
     qa_pass_score: int = 70
-    qa_model_max_deduction: int = 20
-    qa_vision_max_deduction: int = 10
+    # The local model reports a dozen or more nitpicks on nearly every product, so it always reaches its cap.
+    # The caps together use at most half the margin (100 - pass score), leaving room for a few small
+    # deterministic findings; at 20 + 10 any one of them failed the product (owner-visible bottleneck, 2026-10-28).
+    qa_model_max_deduction: int = 10
+    qa_vision_max_deduction: int = 5
     # Visual QA renders workbooks with Excel (COM) if available ("auto"), else LibreOffice; "none" skips it.
     render_engine: str = "auto"
     # Disk guard: Production jobs pause (DISK_LIMIT) below this free space or above this folder size.
@@ -129,6 +132,10 @@ class Settings:
     # started while at least research_reserve_runs headless runs remain for building what it finds.
     max_research_per_shift: int = 3
     research_reserve_runs: int = 6
+    # Work in progress: while this many products are between SPECIFICATION and the owner's desk (REWORK
+    # included), shifts research no new niches and Finance starts no new products; the runs and the daily
+    # builds go to finishing what is already started.
+    max_products_in_progress: int = 6
     shift_start: str = "13:00"  # local time in `timezone`
     shift_end: str = "22:00"
     skip_on_battery: bool = True
@@ -144,8 +151,8 @@ class Settings:
             raise ValueError(f"HIVEMINT_RECALC_ENGINE must be one of {', '.join(RECALC_ENGINES)}")
         if self.render_engine not in RENDER_ENGINES:
             raise ValueError(f"HIVEMINT_RENDER_ENGINE must be one of {', '.join(RENDER_ENGINES)}")
-        if self.qa_model_max_deduction + self.qa_vision_max_deduction > 100 - self.qa_pass_score:
-            raise ValueError("QA_MODEL_MAX_DEDUCTION + QA_VISION_MAX_DEDUCTION must not exceed 100 - QA_PASS_SCORE, "
+        if 2 * (self.qa_model_max_deduction + self.qa_vision_max_deduction) > 100 - self.qa_pass_score:
+            raise ValueError("QA_MODEL_MAX_DEDUCTION + QA_VISION_MAX_DEDUCTION must not exceed half of 100 - QA_PASS_SCORE, "
                              "or the local model alone could fail a product")
         for name, value in (("SHIFT_START", self.shift_start), ("SHIFT_END", self.shift_end)):
             if not _HHMM.match(value):
@@ -179,8 +186,8 @@ class Settings:
             ollama_num_ctx=_int("OLLAMA_NUM_CTX", 8192),
             ollama_models_dir=Path(os.getenv("OLLAMA_MODELS") or DEFAULT_OLLAMA_MODELS_DIR),
             qa_pass_score=_int("QA_PASS_SCORE", 70),
-            qa_model_max_deduction=_int("QA_MODEL_MAX_DEDUCTION", 20),
-            qa_vision_max_deduction=_int("QA_VISION_MAX_DEDUCTION", 10),
+            qa_model_max_deduction=_int("QA_MODEL_MAX_DEDUCTION", 10),
+            qa_vision_max_deduction=_int("QA_VISION_MAX_DEDUCTION", 5),
             render_engine=os.getenv("HIVEMINT_RENDER_ENGINE", "auto"),
             min_free_disk_gb=_float("MIN_FREE_DISK_GB", 50.0),
             max_hivemint_storage_gb=_float("MAX_HIVEMINT_STORAGE_GB", 20.0),
@@ -194,6 +201,7 @@ class Settings:
             max_products_built_per_day=_int("MAX_PRODUCTS_BUILT_PER_DAY", 2),
             max_research_per_shift=_int("MAX_RESEARCH_PER_SHIFT", 3),
             research_reserve_runs=_int("RESEARCH_RESERVE_RUNS", 6),
+            max_products_in_progress=_int("MAX_PRODUCTS_IN_PROGRESS", 6),
             shift_start=os.getenv("SHIFT_START", "13:00"),
             shift_end=os.getenv("SHIFT_END", "22:00"),
             skip_on_battery=_bool("SKIP_ON_BATTERY", True),
@@ -219,6 +227,7 @@ class Settings:
             "max_claude_runs_per_day": self.max_claude_runs_per_day,
             "max_products_built_per_day": self.max_products_built_per_day,
             "max_research_per_shift": self.max_research_per_shift,
+            "max_products_in_progress": self.max_products_in_progress,
             "shift_window": f"{self.shift_start}-{self.shift_end}",
             "skip_on_battery": self.skip_on_battery,
             "min_free_disk_gb": self.min_free_disk_gb,

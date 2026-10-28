@@ -237,8 +237,8 @@ def test_vision_pass_sends_every_chart_image_and_is_capped(session, settings, pr
     vision = [f for f in report["findings"] if f["source"] == "vision"]
     assert len(vision) == 9 and vision[0]["issue"] == "[overlapping_text] The title is drawn on top of the plot area"
     assert "chart1.png" in vision[0]["where"]
-    # 6 major + 3 minor vision findings = 105 points, capped at 10; text 1 minor = 5: still a PASS.
-    assert (report["vision_deduction"], report["model_deduction"], report["score"]) == (10, 5, 85)
+    # 6 major + 3 minor vision findings = 105 points, capped at 5; text 1 minor = 5: still a PASS.
+    assert (report["vision_deduction"], report["model_deduction"], report["score"]) == (5, 5, 90)
     assert product_at_qa.status == S.RED_TEAM and "3 chart(s) rendered by excel" in review.summary
     assert report["render"]["engine"] == "excel" and len(report["render"]["charts"]) == 3
     runs = session.scalars(select(AgentRun).where(AgentRun.job_id == job.id, AgentRun.provider == "ollama")).all()
@@ -297,3 +297,9 @@ def test_an_example_must_fill_every_entry_column_it_uses(sample_spec):
     findings = check_example_fill(spec)
     assert len(findings) == 1 and findings[0].severity == "major"
     assert "Vehicle" in findings[0].issue and "Notes" not in findings[0].issue and "Total" not in findings[0].issue
+
+
+def test_acronym_plurals_are_not_spelling_mistakes():
+    from agents.qa import words
+
+    assert words("Track RSVPs and GPAs for your IDs") == ["track", "and", "for", "your"]
